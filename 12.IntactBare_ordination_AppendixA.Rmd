@@ -1,0 +1,258 @@
+---
+title: '12.IntactBare_ordination_AppendixA'
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+-  generate the ordination plot comparing comunities of bare soil and reference biocrusts for the CP and MJ.
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+library(FSA) # dunnTest for post-hoc
+```
+
+## Load Data
+```{r}
+cesu_16S_ps <- readRDS("data_output/mbcyano_processed_filt_ps.rds")
+cyanoassignments <- read.csv("data/cesucyanoassignments265.csv")
+cyanoassignments$GS <- paste(cyanoassignments$G_checked, cyanoassignments$S_checked)
+qPCR <- read.csv("data/cesuqPCR.csv")
+```
+
+# Get to know the data, create labels, delete extra samples and blanks
+```{r}
+cesu_16S_ps@sam_data@names #colnames for the sample_data information in this phyloseq object
+cesu_16S_ps@sam_data[["names"]] # view all samples
+
+# Create a combo label where sample types are maintained but the replicate is not included (project, farm or greenhouse, desert, water, substrate)
+cesu_16S_ps@sam_data$comboLabel <- paste(cesu_16S_ps@sam_data$project ,cesu_16S_ps@sam_data$farmGreenhouse, cesu_16S_ps@sam_data$desert, cesu_16S_ps@sam_data$water, cesu_16S_ps@sam_data$shade, cesu_16S_ps@sam_data$priorShade,cesu_16S_ps@sam_data$substrate, sep = ".")
+unique(cesu_16S_ps@sam_data$comboLabel)
+table(cesu_16S_ps@sam_data$comboLabel)
+
+#Setup. Delete P and WP substrates, delete water regime B
+# This means I can compare inocula growth in the greenhouse on no substrate, with and without shade (different shade types I think). I will only have timepoint 2 for mayberry farm. I have two timepoints for the greenhouse. I have control values at the greenhouse and farm at the end of cultivation. 
+
+# Subsetting by sample name (remove all sods & watering regime B & blanks):
+# now actually remove them in the ps object
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps, !water %in% c("B"))
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !substrate %in% c("P", "WP"))
+unique(cesu_16S_ps_subset@sam_data$comboLabel)
+table(cesu_16S_ps_subset@sam_data$comboLabel)
+# one of the blanks has an incorrect value for substrate and shade so it is separating out from the rest in the combolabels - fix it when you melt
+# Contruct other useful labels?
+# remove blanks for now
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !project %in% c("Blank"))
+
+# check it
+cesu_16S_ps_subset@sam_data[["comboLabel"]] # ok
+
+# the initials are still in there
+
+# Plot relative and absolute abundance of phylum-level groups across the entire project. Keep all samples without shade for now, but maybe remove later
+# factor the label levels for plotting
+cesu_16S_ps_subset@sam_data$comboLabel <- factor(cesu_16S_ps_subset@sam_data$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+cesu_16S_ps_subset@sam_data$desert <- factor(cesu_16S_ps_subset@sam_data$desert, levels = c("control", "C", "CP", "MJ"))
+```
+
+
+
+## Ordination - bare soil v. intact biocrust
+```{r}
+cesu_16S_ps_bareintact <- subset_samples(cesu_16S_ps_subset, comboLabel %in% c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "R0.control.control.NA.NA.none.soil", "R2.control.control.NA.NA.none.soil"))
+
+# check it
+cesu_16S_ps_bareintact@sam_data[["comboLabel"]] # ok
+
+# add a IS column to dataframe for plotting
+cesu_16S_ps_bareintact@sam_data$IS <- c("I","I","I","I","I","I","S","S","S","S","S","S","S","S","I","I","I")
+cesu_16S_ps_bareintact@sam_data$plottingshape <- c("MJ","MJ","MJ","CP","CP","CP","S","S","S","S","S","S","S","S","CP","CP","CP")
+
+# factor the label levels for plotting
+
+# NMDS plot using Bray Curtis distance
+cesu_16S_ps_bareintact1 <- cesu_16S_ps_bareintact
+# rarefy to even sampling depth
+set.seed(711)
+cesu_16S_ps_bareintact1 <- rarefy_even_depth(cesu_16S_ps_bareintact1, sample.size = 8000, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+# prevalence filter or abundance filter
+ntaxa(cesu_16S_ps_bareintact1) #3288 OTUs still in the dataset
+
+# followed tutorial to filter, rarefy, and keep only the top 5 phyla
+#wh0 <- genefilter_sample(cesu_16S_ps_bareintact, filterfun_sample(function(x) x > 1), A = 0.5*nsamples(cesu_16S_ps_bareintact)) # i think this is a prevalence filter saying that the ASV has to be in at least 5 out of 17 samples to be included 
+#cesu_16S_ps_bareintact1 <- prune_taxa(wh0, cesu_16S_ps_bareintact)
+# no prevalence filter for now
+# cesu_16S_ps_bareintact1 <- cesu_16S_ps_bareintact
+# #transform to even sampling depth
+# cesu_16S_ps_bareintact1 <- transform_sample_counts(cesu_16S_ps_bareintact1, function(x) 1E6 * x/sum(x))
+# # keep only the abundant 5 phyla
+# phylum.sum <- tapply(taxa_sums(cesu_16S_ps_bareintact1), tax_table(cesu_16S_ps_bareintact1)[,"Phylum"], sum, na.rm=TRUE)
+# top5phyla <- names(sort(phylum.sum, TRUE))[1:5]
+# cesu_16S_ps_bareintact1 <- prune_taxa((tax_table(cesu_16S_ps_bareintact1)[,"Phylum"] %in% top5phyla), cesu_16S_ps_bareintact1)
+# #cesu_16S_ps_bareintact1 <- prune_taxa((tax_table(cesu_16S_ps_bareintact1)[,"Phylum"] %in% top5phyla), cesu_16S_ps_bareintact1)
+# ntaxa(cesu_16S_ps_bareintact1) # 122 OTUs
+
+# make sure the variables are correct that you want to compare (I vs. S)
+```
+
+## Ordination
+```{r}
+ordination <- ordinate(cesu_16S_ps_bareintact1, method="NMDS", distance="bray")
+ordination$stress
+
+# Visualization to plot samples
+# would be nice to add an arrow for genera/species to show how important cyanobacteria are in the separation between the two groups
+plot_ordination(cesu_16S_ps_bareintact1, ordination, color="IS", shape = "plottingshape") +
+  theme(aspect.ratio=1) + 
+  #scale_color_manual(values = c("orange4","darkslategray", "goldenrod"), labels = c("Control","Pit", "Pit+Biochar")) +
+  geom_point(size = 3) +
+  theme_classic()+
+  #labs(colour="Treatment")+
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 15, face="bold"),
+        axis.title.y = element_text(size = 15, face="bold"),) #also need to change legend title, make points bigger, make text bigger 
+```
+
+I did not save this plot because it is made with plot_ordination. Instead, I extract the scores below and plot them with ggplot
+
+```{r}
+# Extract the MDS to make plotting easier
+ord.samplesMDS <- as.data.frame(ordination$points)
+# copy rownames to column
+ord.samplesMDS <- rownames_to_column(ord.samplesMDS,"ASV")
+# add important factors for plotting
+ord.samplesMDS$plottingshape <- cesu_16S_ps_bareintact1@sam_data$plottingshape
+ord.samplesMDS$plottingshape <- factor(ord.samplesMDS$plottingshape, levels = c("CP", "MJ", "S"))
+
+# Try a ggplot version
+ord.samplesMDS %>% 
+  ggplot(mapping = aes(x = MDS1, y = MDS2)) +
+  #theme(aspect.ratio=1) + 
+  geom_point(mapping = aes(x = MDS1, y = MDS2, color = plottingshape), size = 3) +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.title.x = element_text(size = 15, face="bold"),
+        axis.title.y = element_text(size = 15, face="bold"))
+# simple plot. check that it matches the plot_ordination version
+```
+
+## Visualization to plot OTUs
+```{r}
+# add taxa MDS1 and MDS2 to the dataframe for plotting
+ord.taxaMDS <- as.data.frame(ordination$species)
+# copy rownames to column
+ord.taxaMDS <- rownames_to_column(ord.taxaMDS,"ASV")
+# remove rows that say NaN
+ord.taxaMDS <- na.omit(ord.taxaMDS) # this worked!
+# now figure out which ASVs are which - attach their taxonomy to them
+taxtable <- as.data.frame(cesu_16S_ps_bareintact1@tax_table)
+# 
+taxtable <- rownames_to_column(taxtable, "ASV")
+# merge
+ord.taxaMDS <- left_join(ord.taxaMDS, taxtable)
+ord.taxaMDS <- na.omit(ord.taxaMDS) # this worked
+# now I can subset for the ones I want and plot them on the samples plot that I already made 
+# I only want to show the cyanobacteria
+ord.taxaMDS_cyano <- ord.taxaMDS %>% filter(Phylum == "Cyanobacteria")
+
+# apply an abundance filter so that only cyanos with high enough abundance are plotted 
+# first subset for only the cyanos in the phyloseq object so that I can apply the abunance filter to determine which ASVs to keep
+cesu_16S_ps_bareintact1_cyano <- subset_taxa(cesu_16S_ps_bareintact1, Phylum == "Cyanobacteria")
+FSr <- transform_sample_counts(cesu_16S_ps_bareintact1_cyano, function(x) x/sum(x))
+cesu_16S_ps_bareintact2_cyano <- filter_taxa(FSr, function(x) sum(x) > 0.025, TRUE)
+ntaxa(cesu_16S_ps_bareintact2_cyano) # 23 OTUs here 
+# get the ASV list
+cyanoASVs <- rownames(cesu_16S_ps_bareintact2_cyano@tax_table)
+
+# keep only these ASVs in the ordtaxaMDS_cyano list
+ord.taxaMDS_cyano_subset <- ord.taxaMDS_cyano %>% filter(ASV %in% cyanoASVs) # got em
+
+# trial sample plot to see how many OTUs are being plotted
+plot_ordination(cesu_16S_ps_bareintact2_cyano, ordination, type = "taxa", color = "Phylum")+
+  # facet_wrap(~"Phylum)+
+  theme_bw() # only 5 cyano ASVs are included in the plot when the prevalence filter is applied
+
+# merge the dataframe with the Cydrasil names instead
+cyanoassignments_GS <- cyanoassignments %>% dplyr::select("ASV","GS")
+ord.taxaMDS_cyano_subset <- left_join(ord.taxaMDS_cyano_subset, cyanoassignments_GS, by = "ASV")
+# remove rows where the GS_all is NA
+ord.taxaMDS_cyano_subset <- ord.taxaMDS_cyano_subset %>% filter(!is.na(GS))
+removetaxa <- c("sister clade to cyanobacteria ", "not identified ", "Gloeobacter ", "Undefined Coleofasciculaceae ", "Undefined Coleofasciculaceae  ", "Undefined Oscillatoriales ")
+ord.taxaMDS_cyano_subset <- ord.taxaMDS_cyano_subset %>% filter(!GS %in% removetaxa)  # now we are down to 54 of them 
+
+# With ggplot, plot just the text on the plot to verify locations 
+#ord.taxaMDS_cyano_subset %>% 
+#  ggplot()+
+#  #geom_point(mapping = aes(x = MDS1, y = MDS2), color = "black")+
+#  geom_text(mapping = aes(x = MDS1, y = MDS2), label = ord.taxaMDS_cyano_subset$ASV, size = 2)+
+#  #geom_text(mapping = aes(x = MDS1, y = MDS2), label = ord.taxaMDS_cyano_subset$Genus, size = 2)+
+#  theme_bw()
+#ggsave("figures.v1/ordinationCyanoLocations.pdf", width = 15, height = 15)
+```
+
+## Visualization with samples and cyanobacteria together 
+Trying to plot the cyanos that passed the abundance threshold
+```{r}
+ggplot(data = ord.samplesMDS, mapping = aes(x = MDS1, y = MDS2)) +
+  geom_point(mapping = aes(x = MDS1, y = MDS2, shape = plottingshape), size = 5) +
+  #geom_point(data = ord.taxaMDS_cyano, mapping = aes(x = MDS1, y = MDS2), color = "black")+
+  geom_text(data = ord.taxaMDS_cyano_subset, mapping = aes(x = MDS1, y = MDS2, fontface = 3), label = ord.taxaMDS_cyano_subset$GS, size = 4)+
+  scale_shape_manual(values = c(19,17,15), labels = c("Colorado Plateau Biocrust", "Mojave Biocrust", "Colorado Plateau Bare Soil"))+
+  labs(shape = "")+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 14, face="bold"),
+        axis.title.y = element_text(size = 14, face="bold"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 14))+
+  xlim(-2.5,1.5)+
+  ylim(-1.5, 1.5)
+#xlim(-2.25,-1.9)+
+#ylim(-0.52,-0.45)
+
+#ggsave("figures.v1/NMDS_samples.pdf", width = 10, height = 10)
+```
+
+# Stress
+```{r}
+ordination$stress # 0.112
+```
+
+# I like this plot, but we need to make it readable. Plot without cyano names
+```{r}
+ggplot(data = ord.samplesMDS, mapping = aes(x = MDS1, y = MDS2)) +
+  geom_point(mapping = aes(x = MDS1, y = MDS2, shape = plottingshape), size = 5) +
+  #geom_point(data = ord.taxaMDS_cyano, mapping = aes(x = MDS1, y = MDS2), color = "black")+
+  #geom_text(data = ord.taxaMDS_cyano_subset, mapping = aes(x = MDS1, y = MDS2, fontface = 3), label = ord.taxaMDS_cyano_subset$GS, size = 4)+
+  scale_shape_manual(values = c(19,17,15), labels = c("Colorado Plateau Biocrust", "Mojave Biocrust", "Colorado Plateau Bare Soil"))+
+  labs(shape = "")+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 14, face="bold"),
+        axis.title.y = element_text(size = 14, face="bold"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 14))
+  #xlim(-2.5,1.5)+
+  #ylim(-1.5, 1.5)
+#xlim(-2.25,-1.9)+
+#ylim(-0.52,-0.45)
+
+#ggsave("figures/NMDS_bare_intact_noLabels.pdf", width = 10, height = 10)
+```

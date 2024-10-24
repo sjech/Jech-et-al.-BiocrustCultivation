@@ -1,0 +1,864 @@
+---
+title: "13.IntactBare_abundance_AppendixA"
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+- Generate the tables in the supplementary materials comparing bare soil to reference CP and MJ biocrusts.
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+library(FSA) # dunnTest for post-hoc
+```
+
+## Load Data
+```{r}
+cesu_16S_ps <- readRDS("data_output/mbcyano_processed_filt_ps.rds")
+cyanoassignments <- read.csv("data/cesucyanoassignments265.csv")
+cyanoassignments$GS <- paste(cyanoassignments$G_checked, cyanoassignments$S_checked)
+qPCR <- read.csv("data/cesuqPCR.csv")
+```
+
+# Get to know the data, create labels, delete extra samples and blanks
+```{r}
+cesu_16S_ps@sam_data@names #colnames for the sample_data information in this phyloseq object
+cesu_16S_ps@sam_data[["names"]] # view all samples
+
+# Create a combo label where sample types are maintained but the replicate is not included (project, farm or greenhouse, desert, water, substrate)
+cesu_16S_ps@sam_data$comboLabel <- paste(cesu_16S_ps@sam_data$project ,cesu_16S_ps@sam_data$farmGreenhouse, cesu_16S_ps@sam_data$desert, cesu_16S_ps@sam_data$water, cesu_16S_ps@sam_data$shade, cesu_16S_ps@sam_data$priorShade,cesu_16S_ps@sam_data$substrate, sep = ".")
+unique(cesu_16S_ps@sam_data$comboLabel)
+table(cesu_16S_ps@sam_data$comboLabel)
+
+#Setup. Delete P and WP substrates, delete water regime B
+# This means I can compare inocula growth in the greenhouse on no substrate, with and without shade (different shade types I think). I will only have timepoint 2 for mayberry farm. I have two timepoints for the greenhouse. I have control values at the greenhouse and farm at the end of cultivation. 
+
+# Subsetting by sample name (remove all sods & watering regime B & blanks):
+# now actually remove them in the ps object
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps, !water %in% c("B"))
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !substrate %in% c("P", "WP"))
+unique(cesu_16S_ps_subset@sam_data$comboLabel)
+table(cesu_16S_ps_subset@sam_data$comboLabel)
+# one of the blanks has an incorrect value for substrate and shade so it is separating out from the rest in the combolabels - fix it when you melt
+# Contruct other useful labels?
+# remove blanks for now
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !project %in% c("Blank"))
+
+# check it
+cesu_16S_ps_subset@sam_data[["comboLabel"]] # ok
+
+# the initials are still in there
+
+# Plot relative and absolute abundance of phylum-level groups across the entire project. Keep all samples without shade for now, but maybe remove later
+# factor the label levels for plotting
+cesu_16S_ps_subset@sam_data$comboLabel <- factor(cesu_16S_ps_subset@sam_data$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+cesu_16S_ps_subset@sam_data$desert <- factor(cesu_16S_ps_subset@sam_data$desert, levels = c("control", "C", "CP", "MJ"))
+
+# get the total read count per sample
+reads_per_sample <- as.data.frame (sample_sums(cesu_16S_ps_subset)) # they are all different because we did not rarefy in this dataset
+#copy the rownames to a column
+reads_per_sample <- tibble::rownames_to_column(reads_per_sample, "Sample")
+# change the name of the second column
+colnames(reads_per_sample) <- c("Sample", "totalReads")
+nrow(reads_per_sample) # 143 samples are included
+
+
+# melt the data out of phyloseq format and into long dataframe
+cesu_psmelt <- psmelt(cesu_16S_ps_subset) #this takes some time, patience!
+```
+
+## Make Absolute Abundance Graphs
+I am going to calculate absolute abundance for all phyla - 
+```{r}
+
+# need to correct the names of cyanobacteria genera/species with Cydrasil
+head(cesu_psmelt)
+# add in the Cydrasil names
+cyanoassignments_GS <- cyanoassignments %>% dplyr::select("ASV","GS")
+cesupsmelt <- left_join(cesu_psmelt, cyanoassignments_GS, by = c("OTU" = "ASV")) 
+
+# text issues with the names 
+cesupsmelt$GS <- trimws(cesupsmelt$GS, which = c("right"))
+unique(cesupsmelt$GS) # 50 unique GS levels
+# fix some of the names 
+cesupsmelt$GS[cesupsmelt$GS == "Chroococidopsis"] <- "Chroococcidiopsis"
+# Deal with the names
+cesupsmelt$GS_all <- cesupsmelt$GS
+cesupsmelt$GS_all <- ifelse(is.na(cesupsmelt$GS_all), paste(cesupsmelt$Genus), cesupsmelt$GS_all)
+unique(cesupsmelt$GS_all) # 698 unique GS_all levels
+
+
+# Keep only the cyanobacteria - not doing this for now
+# cesupsmelt_cyano <- cesupsmelt %>% filter(Phylum == "Cyanobacteria") # 47,802 rows of data 
+
+# Calculate absolute abundance for each ASV
+# merge with total reads in sample
+cesupsmelt_abso <- inner_join(cesupsmelt, reads_per_sample, by = "Sample")
+# divide the Abundance column by the total reads column
+cesupsmelt_abso$relAbund <- cesupsmelt_abso$Abundance / cesupsmelt_abso$totalReads
+# Merge with qPCR counts
+qPCR_subset <- qPCR %>% dplyr::select(SampleID, qPCR_16S_copies, mass_soil_extracted_for_DNA_g)
+cesupsmelt_abso <- inner_join(cesupsmelt_abso, qPCR_subset, by = c("Sample" = "SampleID"))
+# Calculate absolute abundance per gram soil and adjust the scientific notation
+cesupsmelt_abso$absoAbund <- (((cesupsmelt_abso$relAbund * cesupsmelt_abso$qPCR_16S_copies)) / cesupsmelt_abso$mass_soil_extracted_for_DNA_g) / (10^6)
+
+# Calculate the total absoAbund per sample
+absoAbund_by_sample <- cesupsmelt_abso %>% 
+  group_by(Sample) %>% 
+  summarise(totalabsoAbund = sum(absoAbund)) 
+max(absoAbund_by_sample$totalabsoAbund) #86.76
+min(absoAbund_by_sample$totalabsoAbund) #0.09 
+#write.csv(absoAbund_by_sample, "output/absoAbund_by_sample.csv", row.names = FALSE) # save for future use
+```
+
+
+## Calculate differences in intact biocrust and bare soil at the GS level
+```{r}
+CP_GS_initials_summary <- cesupsmelt_abso %>% 
+  filter(project == "CP") %>% 
+  group_by(Phylum, GS_all) %>% 
+  summarise(min = min(absoAbund),
+            max = max(absoAbund),
+            mean = mean(absoAbund),
+            sd = sd(absoAbund)) %>%
+  arrange(desc(mean))
+
+CP_GS_soils_summary <- cesupsmelt_abso %>%
+  filter(project %in% c("R0","R2")) %>%
+  filter(desert == "control") %>%
+  group_by(Phylum, GS_all) %>%
+  summarise(min = min(absoAbund),
+            max = max(absoAbund),
+            mean = mean(absoAbund),
+            sd = sd(absoAbund)) %>%
+  arrange(desc(mean))
+
+
+CP_GS_soils <- cesupsmelt_abso %>%
+  filter(project %in% c("R0","R2")) %>%
+  filter(desert == "control")
+CP_GS_soils$IS <- "S"
+
+CP_GS_initials <- cesupsmelt_abso %>% 
+  filter(project == "CP") %>% 
+  group_by(Phylum, GS_all)
+CP_GS_initials$IS <- "I"
+
+# merge these two together so that I can run a t.test for each phylum
+CP_GS_IS <- rbind(CP_GS_initials, CP_GS_soils)
+
+# subset for only the phyla that were significantly different between intact biocrusts and bare soil..I am skipping this for now just case there is something interesting in the other phyla 
+#CP_GS_IS <- CP_GS_IS %>% filter(Phylum %in% c("Cyanobacteria", "Verrucomicrobiota", "Proteobacteria", "Actinobacteriota", "Crenarchaeota"))
+
+# So many with zero abundance in this dataframe 
+CP_GS_IS <- CP_GS_IS %>% filter(Abundance > 0) 
+
+# I want to check that the cyano assignments are correct for both the intial crusts and the bare soils
+# temp11 <- CP_GS_IS %>% filter(IS == "I") %>% filter(Phylum == "Cyanobacteria")
+# I_cyanoOTU_list <- unique(temp11$OTU)
+# assigned_cyanoOTU_list <- unique(cyanoassignments$ASV)
+# I_cyanoOTU_list[!(I_cyanoOTU_list %in% assigned_cyanoOTU_list)]
+# temp13 <- I_cyanoOTU_list[!(I_cyanoOTU_list %in% assigned_cyanoOTU_list)]
+# 
+# temp12 <- CP_GS_IS %>% filter(IS == "S") %>% filter(Phylum == "Cyanobacteria")
+# S_cyanoOTU_list <- unique(temp12$OTU)
+# #assigned_cyanoOTU_list <- unique(cyanoassignments$ASV)
+# S_cyanoOTU_list[!(S_cyanoOTU_list %in% assigned_cyanoOTU_list)]
+# temp14 <- S_cyanoOTU_list[!(S_cyanoOTU_list %in% assigned_cyanoOTU_list)]
+# temp15 <- union(temp13, temp14)
+# temp15
+# This code generated a list of cyanos that may need to be checked for taxonomy in Cydrasil because they were missed (because they are probably very low abundance/prevalence)
+# SDJ decided not to include these taxa in the analyses. The cutoff was 50 reads across the whole dataset for Cydrasil assignment. I think I can remove the cyanos in temp15 from the rest of the analyses...
+
+#### REMOVE THEM HERE ####
+```
+
+
+## What are the Genera?
+```{r}
+# first you need to sum at the genus level
+CP_GS_IS_noASVs <- CP_GS_IS %>% 
+  group_by(Sample, Phylum, GS_all, IS) %>%
+  summarise(sumAbsoAbund = sum(absoAbund))
+
+temp5 <- CP_GS_IS_noASVs %>% 
+  filter(IS == "I") %>% 
+  group_by(Phylum, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(sumAbsoAbund, na.rm = TRUE)) # determine the mean relative abundance of Genera in intact biocrusts
+
+temp5 <- temp5 %>% filter(!GS_all %in% c("NA","not identified", "Undefined Coleofasciculaceae", "sister clade to cyanobacteria"))
+
+# if you want multiple phyla in the list
+temp5 <- temp5 %>% 
+  arrange(desc(meanAbsoAbund)) %>% 
+  group_by(Phylum) %>% 
+  slice(1:5) # keep only the top 5 genera in each phyla
+IS_top5GperPhyla <- temp5$GS_all
+
+# keep these top 5 Genera for each phyla but get the values for both the intact and bare soils
+temp6 <- CP_GS_IS_noASVs %>% 
+  filter(GS_all %in% IS_top5GperPhyla)
+
+unique(temp6$GS_all)
+#70 of them
+
+temp7 <- temp6 %>% ungroup() %>% select(Phylum, GS_all)
+temp7 <- unique(temp7) # this just tells you which phylum each of the genera belong to in a quick table. 
+temp7 <- temp7 %>% arrange(Phylum)
+
+
+# if you wanted only the cyanos, which I ended up doing after the fact out of curiosity
+#temp5_cyano <- temp5 %>% 
+#   arrange(desc(meanAbsoAbund)) %>% 
+#   group_by(Phylum) %>% 
+#  filter(Phylum == "Cyanobacteria")
+IS_topcyanoGS <- temp5_cyano$GS_all
+
+temp6_cyano <- CP_GS_IS_noASVs %>% 
+  filter(GS_all %in% IS_topcyanoGS)
+unique(temp6_cyano$GS_all)
+#70 of them
+
+temp7_cyano <- temp6_cyano %>% ungroup() %>% select(Phylum, GS_all)
+temp7_cyano <- unique(temp7_cyano) # this just tells you which phylum each of the genera belong to in a quick table. 
+temp7_cyano <- temp7_cyano %>% arrange(Phylum)
+```
+
+## T-TESTS or Wilcoxon Comparisons 
+# This is for all phyla 
+# Cyanobacteria
+```{r}
+# Mvag
+Mvag_IS <- temp6 %>% filter(GS_all == "Microcoleus vaginatus")
+wilcox.test(sumAbsoAbund ~ IS, data = Mvag_IS) #significant 
+# W = 48, p-value = 0.000666
+Mvag_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+#intact is higher
+
+# Arizonema
+ariz_IS <- temp6 %>% filter(GS_all == "Arizonema")
+wilcox.test(sumAbsoAbund ~ IS, data = ariz_IS) #significant 
+# W = 48, p-value = 0.000666
+ariz_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+# Crustifilum
+crusti_IS <- temp6 %>% filter(GS_all == "Crustifilum")
+wilcox.test(sumAbsoAbund ~ IS, data = crusti_IS) #significant 
+# W = 48, p-value = 0.000666
+crusti_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Scytonema
+scyt_IS <- temp6 %>% filter(GS_all == "Scytonema")
+wilcox.test(sumAbsoAbund ~ IS, data = scyt_IS) #significant 
+# W = 48, p-value = 0.000666
+scyt_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+# Nostoc
+nost_IS <- temp6 %>% filter(GS_all == "Nostoc")
+wilcox.test(sumAbsoAbund ~ IS, data = nost_IS) #significant 
+# W = 48, p-value = 0.000666
+nost_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+
+# Verrucomicrobia
+# Candidatus Udaeobacter
+udaeo_IS <- temp6 %>% filter(GS_all == "Candidatus Udaeobacter")
+wilcox.test(sumAbsoAbund ~ IS, data = udaeo_IS) #significant 
+# W = 17, p-value = 0.4136
+udaeo_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Chthoniobacter
+chthon_IS <- temp6 %>% filter(GS_all == "Chthoniobacter")
+wilcox.test(sumAbsoAbund ~ IS, data = chthon_IS) #significant 
+# W = 20, p-value = 0.662
+chthon_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Opitutus
+opitut_IS <- temp6 %>% filter(GS_all == "Opitutus")
+wilcox.test(sumAbsoAbund ~ IS, data = opitut_IS) #significant 
+# W = 11, p-value = 0.7143
+opitut_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Pedosphaera
+pedo_IS <- temp6 %>% filter(GS_all == "LD29")
+wilcox.test(sumAbsoAbund ~ IS, data = pedo_IS) #significant 
+# W = 2, p-value = 1
+pedo_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+# LD29
+LD29_IS <- temp6 %>% filter(GS_all == "LD29")
+wilcox.test(sumAbsoAbund ~ IS, data = LD29_IS) #significant 
+# W = 2, p-value = 1
+LD29_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+
+# And for the phyla that were more abundant in bare soil than in intact biocrust
+# Proteobacteria
+# Ellin6055
+ellin_IS <- temp6 %>% filter(GS_all == "Ellin6055")
+wilcox.test(sumAbsoAbund ~ IS, data = ellin_IS) # 
+# W = 11, p-value = 0.1079
+ellin_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+# Microvirga
+microvirga_IS <- temp6 %>% filter(GS_all == "Microvirga")
+wilcox.test(sumAbsoAbund ~ IS, data = microvirga_IS) #significant 
+# W = 3, p-value = 0.004662
+microvirga_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                             sdAbsoAbund = sd(sumAbsoAbund))
+# Ramlibacter
+ramli_IS <- temp6 %>% filter(GS_all == "Ramlibacter")
+wilcox.test(sumAbsoAbund ~ IS, data = ramli_IS) #significant 
+# W = 8, p-value = 0.6667
+ramli_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+# Rubellimicrobium
+rubell_IS <- temp6 %>% filter(GS_all == "Rubellimicrobium")
+wilcox.test(sumAbsoAbund ~ IS, data = rubell_IS) #significant 
+# W = 13, p-value = 0.1812
+rubell_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+# Sphingomonas
+sphing_IS <- temp6 %>% filter(GS_all == "Sphingomonas")
+wilcox.test(sumAbsoAbund ~ IS, data = sphing_IS) #significant 
+# W = 8, p-value = 0.04262
+sphing_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+
+# Actinobacteriota
+# Actinoplanes
+actinoplanes_IS <- temp6 %>% filter(GS_all == "Actinoplanes")
+wilcox.test(sumAbsoAbund ~ IS, data = actinoplanes_IS) # 
+# W = 9, p-value = 0.05927
+actinoplanes_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                               sdAbsoAbund = sd(sumAbsoAbund))
+
+# Blastococcus
+blasto_IS <- temp6 %>% filter(GS_all == "Blastococcus")
+wilcox.test(sumAbsoAbund ~ IS, data = blasto_IS) #significant 
+# W = 2, p-value = 0.002664
+blasto_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+# Couchioplanes
+couchi_IS <- temp6 %>% filter(GS_all == "Couchioplanes")
+wilcox.test(sumAbsoAbund ~ IS, data = couchi_IS) # 
+# W = 3, p-value = 0.004662
+couchi_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+# Geodermatophilus
+geoderm_IS <- temp6 %>% filter(GS_all == "Geodermatophilus")
+wilcox.test(sumAbsoAbund ~ IS, data = geoderm_IS) # 
+# W = 5, p-value = 0.07273
+geoderm_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+# Rubrobacter
+rubro_IS <- temp6 %>% filter(GS_all == "Rubrobacter")
+wilcox.test(sumAbsoAbund ~ IS, data = rubro_IS) #significant 
+# W = 21, p-value = 0.7546
+rubro_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Crenarchaeota
+# Candidatus Nitrocosmicus
+nitro_IS <- temp6 %>% filter(GS_all == "Candidatus Nitrocosmicus")
+wilcox.test(sumAbsoAbund ~ IS, data = nitro_IS) #significant 
+# W = 4, p-value = 0.007992
+nitro_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+# Candidatus Nitrososphaera
+nitrosos_IS <- temp6 %>% filter(GS_all == "Candidatus Nitrososphaera")
+wilcox.test(sumAbsoAbund ~ IS, data = nitrosos_IS) #significant 
+# W = 4, p-value = 0.007992
+nitrosos_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                           sdAbsoAbund = sd(sumAbsoAbund))
+
+# This is for the additional cyanobacteria that weren't previously compared above
+#
+cyanoGS_IS <- temp6_cyano %>% filter(GS_all == "Phormidesmis ANT.L52.6")
+wilcox.test(sumAbsoAbund ~ IS, data = cyanoGS_IS)  
+# see below for results
+cyanoGS_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+
+# "Phormidium CYN64" W = 0, p-value = 0.6667 present in both
+# "Crinalium epipsammum" W = 2, p-value = 1 present in both
+# "Aliterella" W = 2, p-value = 0.6667 present in both
+# "Candidatus Obscuribacter" W = 1, p-value = 1 present in both       
+# "Allocoleopsis" only present in intact (0.05 +- 0.04)
+# "Chroococcidiopsis" only present in intact (0.04 +- 0.03)
+# "Lyngbya" only present in intact (0.02 +- 0.004)
+# "Schizothrix cf-calcicola" only present in intact (0.02 +- 0.02)
+# "Stenomitos frigidus" only present in intact (0.03 +- 0.02)
+# "Tolypothrix" only present in intact (0.02 +- 0.03)
+# "Trichocoleus desertorum" only present in intact (0.02 +- 0.02)
+# "Funiculus" only present in intact (0.04 +- 0.05)
+# "Oscillatoria" only present in intact (0.002 NA)
+# "Wilmottia" only present in intact (0.05 NA)
+# "Pycnacronema brasiliensis" only present in intact (0.02 +- 0.02)
+# "Crinalium SAG 22.89" only present in intact (0.01 NA)
+# "Nodosilinea PCC-7104" only present in intact (0.01 NA)
+# "Phormidesmis ANT.L52.6" only present in intact (0.004 NA)
+```
+
+## And for Mojave...
+```{r}
+MJ_GS_initials_summary <- cesupsmelt_abso %>% 
+  filter(project == "MJ") %>% 
+  group_by(Phylum, GS_all) %>% 
+  summarise(min = min(absoAbund),
+            max = max(absoAbund),
+            mean = mean(absoAbund),
+            sd = sd(absoAbund)) %>%
+  arrange(desc(mean))
+
+# Can use these from above
+# CP_GS_soils_summary <- cesupsmelt_abso %>%
+#   filter(project %in% c("R0","R2")) %>%
+#   filter(desert == "control") %>%
+#   group_by(Phylum, GS_all) %>%
+#   summarise(min = min(relAbund),
+#             max = max(relAbund),
+#             mean = mean(relAbund),
+#             sd = sd(relAbund)) %>%
+#   arrange(desc(mean))
+# 
+# 
+# CP_GS_soils <- cesupsmelt_abso %>%
+#   filter(project %in% c("R0","R2")) %>%
+#   filter(desert == "control")
+# CP_GS_soils$IS <- "S"
+
+MJ_GS_initials <- cesupsmelt_abso %>% 
+  filter(project == "MJ") %>% 
+  group_by(Phylum, GS_all)
+MJ_GS_initials$IS <- "I"
+
+# merge these two together so that I can run a t.test for each phylum
+MJ_GS_IS <- rbind(MJ_GS_initials, CP_GS_soils)
+
+# Which phyla are significantly different between mojave intact and colorado plateau bare soils?
+# Phyla: Abditibacteriota, Acidobacteriota, Actinobacteriota, Bacteroidota, Crenarchaeota, Cyanobacteria, Firmicutes, Myxococcota, Proteobacteria, Verrucomicrobiota
+
+# subset for only the phyla that were significantly different between intact biocrusts and bare soil...I didn't do this because they are all significant 
+#MJ_GS_IS <- MJ_GS_IS %>% filter(Phylum %in% c("Abditibacteriota", "Acidobacteriota", "Actinobacteriota", "Bacteroidota", "Crenarchaeota", "Cyanobacteria", "Firmicutes", "Myxococcota", "Proteobacteria", "Verrucomicrobiota"))
+
+# Fill in the IS column
+MJ_GS_IS <- MJ_GS_IS %>%
+  mutate(IS = case_when(
+    grepl(pattern = "MJ", x = project) ~ "I",
+    grepl(pattern = "R0", x = project) ~ "S",
+    grepl(pattern = "R2", x = project) ~ "S"
+  ))
+
+# So many with zero abundance in this dataframe 
+MJ_GS_IS <- MJ_GS_IS %>% filter(Abundance > 0)
+
+# what are the Genera?
+# first you need to sum at the genus level
+MJ_GS_IS_noASVs <- MJ_GS_IS %>% 
+  group_by(Sample, Phylum, GS_all, IS) %>% 
+  summarise(sumAbsoAbund = sum(absoAbund))
+
+temp5 <- MJ_GS_IS_noASVs %>% 
+  filter(IS == "I") %>% 
+  group_by(Phylum, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(sumAbsoAbund, na.rm = TRUE)) # determine the mean relative abundance of Genera in intact biocrusts
+
+temp5 <- temp5 %>% filter(!GS_all %in% c("NA","not identified", "Undefined Coleofasciculaceae"))
+
+temp5 <- temp5 %>% 
+  arrange(desc(meanAbsoAbund)) %>% 
+  group_by(Phylum) %>% 
+  slice(1:5) # keep only the top 5 genera in each phyla
+
+IS_top5GperPhyla <- temp5$GS_all
+
+# keep these top 5 Genera for each phyla but get the values for both the intact and bare soils
+temp6 <- MJ_GS_IS_noASVs %>% 
+  filter(GS_all %in% IS_top5GperPhyla)
+
+unique(temp6$GS_all)
+# 63 of em            
+
+temp7 <- temp6 %>% 
+  ungroup() %>% 
+  select(Phylum, GS_all)
+
+temp7 <- unique(temp7) # this just tells you which phylum each of the genera belong to in a quick table. 
+temp7 <- temp7 %>% arrange(Phylum)
+
+
+
+
+# All the cyanos for Mojave biocrust 
+temp5 <- MJ_GS_IS_noASVs %>% 
+  filter(IS == "I") %>% 
+  group_by(Phylum, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(sumAbsoAbund, na.rm = TRUE)) # determine the mean relative abundance of Genera in intact biocrusts
+
+temp5 <- temp5 %>% filter(!GS_all %in% c("NA","not identified", "Undefined Coleofasciculaceae"))
+
+temp5_cyano <- temp5 %>% 
+  arrange(desc(meanAbsoAbund)) %>% 
+  group_by(Phylum) %>% 
+  filter(Phylum == "Cyanobacteria")
+
+IS_topcyanoGS_MJ <- temp5_cyano$GS_all
+
+# keep these Genera for each phyla but get the values for both the intact and bare soils
+temp6_cyano <- MJ_GS_IS_noASVs %>% 
+  filter(GS_all %in% IS_topcyanoGS_MJ)
+
+unique(temp6_cyano$GS_all)
+# 27 of em            
+
+temp7_cyano <- temp6_cyano %>% 
+  ungroup() %>% 
+  select(Phylum, GS_all)
+
+temp7_cyano <- unique(temp7_cyano) # this just tells you which phylum each of the genera belong to in a quick table. 
+temp7_cyano <- temp7_cyano %>% arrange(Phylum)
+
+
+
+
+# These tests are for comparing the top 5 genera in each phyla. 
+# T-TESTS or KRUSKAL
+# cyanobacteria 
+# M.vag
+Mvag_IS <- temp6 %>% filter(GS_all == "Microcoleus vaginatus")
+wilcox.test(sumAbsoAbund ~ IS, data = Mvag_IS) #significant 
+# W = 23, p-value = 0.02424
+Mvag_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+#intact is higher
+
+# Funiculus
+funic_IS <- temp6 %>% filter(GS_all == "Funiculus")
+wilcox.test(sumAbsoAbund ~ IS, data = funic_IS) # 
+# W = 24, p-value = 0.01212
+funic_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Parifilum
+parif_IS <- temp6 %>% filter(GS_all == "Parifilum")
+wilcox.test(sumAbsoAbund ~ IS, data = parif_IS) # 
+# W = 24, p-value = 0.01212
+parif_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Schizothrix
+schizo_IS <- temp6 %>% filter(GS_all == "Schizothrix cf-calcicola")
+wilcox.test(sumAbsoAbund ~ IS, data = schizo_IS) # 
+# W = 24, p-value = 0.01212
+schizo_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Scytonema
+scyt_IS <- temp6 %>% filter(GS_all == "Scytonema")
+wilcox.test(sumAbsoAbund ~ IS, data = scyt_IS) #significant 
+# W = 24, p-value = 0.01212
+scyt_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+
+
+# Proteobacteria
+# Ellin6055
+ellin_IS <- temp6 %>% filter(GS_all == "Ellin6055")
+wilcox.test(sumAbsoAbund ~ IS, data = ellin_IS) #significant 
+# W = 5, p-value = 0.1939
+ellin_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Massilia
+massil_IS <- temp6 %>% filter(GS_all == "Massilia")
+wilcox.test(sumAbsoAbund ~ IS, data = massil_IS) #significant 
+# W = 9, p-value = 0.6303
+massil_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Microvirga
+microvirg_IS <- temp6 %>% filter(GS_all == "Microvirga")
+wilcox.test(sumAbsoAbund ~ IS, data = microvirg_IS) #significant 
+# W = 3, p-value = 0.08485
+microvirg_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                            sdAbsoAbund = sd(sumAbsoAbund))
+
+# Rubellimicrobium
+rubell_IS <- temp6 %>% filter(GS_all == "Rubellimicrobium")
+wilcox.test(sumAbsoAbund ~ IS, data = rubell_IS) #significant 
+# W = 9, p-value = 0.6303
+rubell_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Noviherbaspirillum
+novih_IS <- temp6 %>% filter(GS_all == "Noviherbaspirillum")
+wilcox.test(sumAbsoAbund ~ IS, data = novih_IS) #significant 
+# W = 1, p-value = 1
+novih_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Verrucomicrobia
+# Candidatus Udaeobacter
+udaeo_IS <- temp6 %>% filter(GS_all == "Candidatus Udaeobacter")
+wilcox.test(sumAbsoAbund ~ IS, data = udaeo_IS) # 
+# W = 5, p-value = 0.1939
+udaeo_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+# Chthoniobacter
+chthoni_IS <- temp6 %>% filter(GS_all == "Chthoniobacter")
+wilcox.test(sumAbsoAbund ~ IS, data = chthoni_IS) #significant 
+# W = 2, p-value = 0.04848
+chthoni_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+# Pedosphaera
+pedosph_IS <- temp6 %>% filter(GS_all == "Pedosphaera")
+wilcox.test(sumAbsoAbund ~ IS, data = pedosph_IS) # 
+# W = 0, p-value = 0.2
+pedosph_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+# Roseimicrobium
+rosei_IS <- temp6 %>% filter(GS_all == "Roseimicrobium")
+wilcox.test(sumAbsoAbund ~ IS, data = rosei_IS) # 
+# W = 1, p-value = 0.6667
+rosei_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+# LD29
+LD29_IS <- temp6 %>% filter(GS_all == "LD29")
+wilcox.test(sumAbsoAbund ~ IS, data = LD29_IS) # 
+# W = 1, p-value = 1
+novih_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+
+# Actinobacteria 
+# Blastococcus
+blasto_IS <- temp6 %>% filter(GS_all == "Blastococcus")
+wilcox.test(sumAbsoAbund ~ IS, data = blasto_IS) # 
+# W = 5, p-value = 0.1939
+blasto_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+#Cellulomonas
+cellulo_IS <- temp6 %>% filter(GS_all == "Cellulomonas")
+wilcox.test(sumAbsoAbund ~ IS, data = cellulo_IS) # 
+# W = 5, p-value = 0.1939
+cellulo_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+#Couchioplanes
+couchio_IS <- temp6 %>% filter(GS_all == "Couchioplanes")
+wilcox.test(sumAbsoAbund ~ IS, data = couchio_IS) # 
+# W = 5, p-value = 0.1939
+couchio_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+#Geodermatophilus
+geoderm_IS <- temp6 %>% filter(GS_all == "Geodermatophilus")
+wilcox.test(sumAbsoAbund ~ IS, data = geoderm_IS) # 
+# W = 5, p-value = 0.1939
+geoderm_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+#Rubrobacter
+rubro_IS <- temp6 %>% filter(GS_all == "Rubrobacter")
+wilcox.test(sumAbsoAbund ~ IS, data = rubro_IS) # 
+# W = 5, p-value = 0.1939
+rubro_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Crenarchaeota 
+# Candidatus Nitrocosmicus
+nitrocos_IS <- temp6 %>% filter(GS_all == "Candidatus Nitrocosmicus")
+wilcox.test(sumAbsoAbund ~ IS, data = nitrocos_IS) # 
+# W = 5, p-value = 0.1939
+nitrocos_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                           sdAbsoAbund = sd(sumAbsoAbund))
+
+# Candidatus Nitrososphaera
+nitrosos_IS <- temp6 %>% filter(GS_all == "Candidatus Nitrososphaera")
+wilcox.test(sumAbsoAbund ~ IS, data = blasto_IS) # 
+# W = 5, p-value = 0.1939
+blasto_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Planctomycetota 
+# Rhodopirellula
+rhodop_IS <- temp6 %>% filter(GS_all == "Rhodopirellula")
+wilcox.test(sumAbsoAbund ~ IS, data = rhodop_IS) # 
+# W = 5, p-value = 0.1939
+rhodop_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Fimbriiglobus
+fimbriig_IS <- temp6 %>% filter(GS_all == "Fimbriiglobus")
+wilcox.test(sumAbsoAbund ~ IS, data = fimbriig_IS) # 
+# W = 5, p-value = 0.1939
+fimbriig_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                           sdAbsoAbund = sd(sumAbsoAbund))
+# Pirellula
+pirellula_IS <- temp6 %>% filter(GS_all == "Pirellula")
+wilcox.test(sumAbsoAbund ~ IS, data = pirellula_IS) # 
+# W = 5, p-value = 0.1939
+pirellula_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                            sdAbsoAbund = sd(sumAbsoAbund))
+
+# Bacteroidota 
+# Adhaeribacter
+adhaer_IS <- temp6 %>% filter(GS_all == "Adhaeribacter")
+wilcox.test(sumAbsoAbund ~ IS, data = adhaer_IS) # 
+# W = 5, p-value = 0.1939
+adhaer_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Flavisolibacter
+flavis_IS <- temp6 %>% filter(GS_all == "Flavisolibacter")
+wilcox.test(sumAbsoAbund ~ IS, data = flavis_IS) # 
+# W = 5, p-value = 0.1939
+flavis_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Nibrella
+nibre_IS <- temp6 %>% filter(GS_all == "Nibrella")
+wilcox.test(sumAbsoAbund ~ IS, data = nibre_IS) # 
+# W = 5, p-value = 0.1939
+nibre_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Rhodocytophaga
+rhodo_IS <- temp6 %>% filter(GS_all == "Rhodocytophaga")
+wilcox.test(sumAbsoAbund ~ IS, data = rhodo_IS) # 
+# W = 5, p-value = 0.1939
+rhodo_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Segetibacter
+segeti_IS <- temp6 %>% filter(GS_all == "Segetibacter")
+wilcox.test(sumAbsoAbund ~ IS, data = segeti_IS) # 
+# W = 5, p-value = 0.1939
+segeti_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+
+#Acidobacteria
+# Aridibacter
+aridi_IS <- temp6 %>% filter(GS_all == "Aridibacter")
+wilcox.test(sumAbsoAbund ~ IS, data = aridi_IS) # 
+# W = 5, p-value = 0.1939
+aridi_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Blastocatella
+blasto_IS <- temp6 %>% filter(GS_all == "Blastocatella")
+wilcox.test(sumAbsoAbund ~ IS, data = blasto_IS) # 
+# W = 5, p-value = 0.1939
+blasto_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+# Bryobacter
+bryo_IS <- temp6 %>% filter(GS_all == "Bryobacter")
+wilcox.test(sumAbsoAbund ~ IS, data = bryo_IS) # 
+# W = 5, p-value = 0.1939
+bryo_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+# RB41
+rb41_IS <- temp6 %>% filter(GS_all == "RB41")
+wilcox.test(sumAbsoAbund ~ IS, data = rb41_IS) # 
+# W = 5, p-value = 0.1939
+rb41_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+
+# Subgroup 10
+sub10_IS <- temp6 %>% filter(GS_all == "Subgroup 10")
+wilcox.test(sumAbsoAbund ~ IS, data = sub10_IS) # 
+# W = 5, p-value = 0.1939
+sub10_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                        sdAbsoAbund = sd(sumAbsoAbund))
+
+# Chloroflexi 
+# FFCH7168
+ffch_IS <- temp6 %>% filter(GS_all == "FFCH7168")
+wilcox.test(sumAbsoAbund ~ IS, data = ffch_IS) # 
+# W = 5, p-value = 0.1939
+ffch_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                       sdAbsoAbund = sd(sumAbsoAbund))
+# Herpetosiphon
+herpet_IS <- temp6 %>% filter(GS_all == "Herpetosiphon")
+wilcox.test(sumAbsoAbund ~ IS, data = herpet_IS) # 
+# W = 5, p-value = 0.1939
+herpet_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+# Thermobaculum
+thermobac_IS <- temp6 %>% filter(GS_all == "Thermobaculum")
+wilcox.test(sumAbsoAbund ~ IS, data = thermobac_IS) # 
+# W = 5, p-value = 0.1939
+thermobac_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                            sdAbsoAbund = sd(sumAbsoAbund))
+# Chloronema
+chloro_IS <- temp6 %>% filter(GS_all == "Chloronema")
+wilcox.test(sumAbsoAbund ~ IS, data = chloro_IS) # 
+# W = 5, p-value = 0.1939
+chloro_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+# Litorilinea
+litori_IS <- temp6 %>% filter(GS_all == "Litorilinea")
+wilcox.test(sumAbsoAbund ~ IS, data = litori_IS) # 
+# W = 5, p-value = 0.1939
+litori_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                         sdAbsoAbund = sd(sumAbsoAbund))
+
+```
+
+
+## These are for cyano comparisons 
+# cyanobacteria 
+```{r}
+# M.vag
+cyanoGS_IS <- temp6_cyano %>% filter(GS_all == "Calenema")
+wilcox.test(sumAbsoAbund ~ IS, data = cyanoGS_IS) #significant 
+# W = 23, p-value = 0.02424
+cyanoGS_IS %>% group_by(IS) %>% summarise(meanAbsoAbund = mean(sumAbsoAbund),
+                                          sdAbsoAbund = sd(sumAbsoAbund))
+
+# "Allocoleopsis" only present in intact biocrust (0.18 +- 0.07)
+# "Arizonema" ony present in intact biocrust (0.12 +- 0.09)
+# "Cephalothrix" only present in intact biocrust (0.01 +- 0.004)             
+# "Chroococcidiopsis" only present in intact biocust (0.12 +- 0.04)
+# "Crustifilum" only present in intact biocrust (0.02 +- 0.008)
+# "Leptolyngbya" only present in intact biocrust (0.06 +- 0.05)
+# "Lyngbya" only present in intact biocrust (0.02 +- 0.01)
+# "Microcoleus paludosus" only present in intact biocrust (0.15 +- 0.08)     
+# "Myxacorys californica" only present in intact biocrust (0.03 +- 0.02)
+# "Nostoc" only present in intact biocrust (0.01 +- 0.005)                   
+# "Potamolinea" only present in intact biocrust (0.07 +- 0.03)
+# "Pycnacronema brasiliensis" only present in intact biocrust (0.2 +- 0.1)
+# "Tolypothrix" only present in intact biocrust (0.04 +- 0.01)              
+# "Trichocoleus desertorum" only present in intact biocrust (0.02 +- 0.006)
+# "Crinalium epipsammum" present in both (one replicate from each) W = 0, p-value = 1
+# "Leptolyngbya ANT.L52.2" only present in intact biocrust 
+# "Microcoleus SAG 1449-1a" only present in intact biocrust   
+# "Pycnacronema" only present in intact biocrust 
+# "Calenema" only present in intact biocrust 
+
+```

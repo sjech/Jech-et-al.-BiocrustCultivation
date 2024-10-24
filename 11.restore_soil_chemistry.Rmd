@@ -1,0 +1,567 @@
+---
+title: "11.restore_soil_chemistry"
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+-  investigate restoration outcomes 5 months after inoculation
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+```
+
+## Load Data
+```{r}
+soilchem <- read.csv("data/cesu_soilchemdata.csv")
+```
+
+## Subset Data for Restoration
+```{r}
+res_soilchem <- soilchem %>% filter(phase == "resurrect")
+# remove cultivation water B
+res_soilchem <- res_soilchem %>% filter(cultivation_water != "B")
+# keep only the ones that coorespond to the Dec and May sampling timepoints
+res_soilchem <- res_soilchem %>% filter(eps_timepoint %in% c("0","2"))
+
+new_labels <- c("g"="Greenhouse Cultivation", "f"="Field Cultivation")
+```
+
+# Initial Plots 
+```{r}
+# Chlorophyll a
+res_soilchem %>% ggplot()+
+  geom_boxplot(mapping = aes (x = resurrect_desert_treatment, y = chla, fill = eps_timepoint))+
+  theme_classic()+
+  scale_fill_discrete(name = "Restortation Timepoint", labels = c("Inoculation", "20 weeks"))+
+  #scale_x_discrete(labels = c("R2.CP.g.none" = "Colorado\n Plateau", "R2.CP.g.S" = "", "R2.MJ.g.none" = "Mojave", "R2.MJ.g.S" = "", "R2.CP.f.none" = "Colorado\n Plateau", "R2.CP.f.S" = "", "R2.MJ.f.none" = "Mojave", "R2.MJ.f.S" = ""))+
+  facet_wrap(~cultivation_f_g_c, scales = "free_x", labeller = as_labeller(new_labels))+
+  labs(x = "", y = "Chlorophyll a (units)")+
+  theme(axis.ticks.x = element_blank(),
+        #axis.text.x = element_text(hjust = -0.5),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 12),
+        axis.title = element_text(size = 14))
+
+# L EPS
+res_soilchem %>% ggplot()+
+  geom_boxplot(mapping = aes (x = resurrect_desert_treatment, y = lb_eps, fill = eps_timepoint))+
+  theme_classic()+
+  scale_fill_discrete(name = "Restortation Timepoint", labels = c("Inoculation", "20 weeks"))+
+  #scale_x_discrete(labels = c("R2.CP.g.none" = "Colorado\n Plateau", "R2.CP.g.S" = "", "R2.MJ.g.none" = "Mojave", "R2.MJ.g.S" = "", "R2.CP.f.none" = "Colorado\n Plateau", "R2.CP.f.S" = "", "R2.MJ.f.none" = "Mojave", "R2.MJ.f.S" = ""))+
+  facet_wrap(~cultivation_f_g_c, scales = "free_x", labeller = as_labeller(new_labels))+
+  labs(x = "", y = "LB EPS (units)")+
+  theme(axis.ticks.x = element_blank(),
+        #axis.text.x = element_text(hjust = -0.5),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 12),
+        axis.title = element_text(size = 14))
+
+# T EPS
+res_soilchem %>% ggplot()+
+  geom_boxplot(mapping = aes (x = resurrect_desert_treatment, y = tb_eps, fill = eps_timepoint))+
+  theme_classic()+
+  scale_fill_discrete(name = "Restortation Timepoint", labels = c("Inoculation", "20 weeks"))+
+  #scale_x_discrete(labels = c("R2.CP.g.none" = "Colorado\n Plateau", "R2.CP.g.S" = "", "R2.MJ.g.none" = "Mojave", "R2.MJ.g.S" = "", "R2.CP.f.none" = "Colorado\n Plateau", "R2.CP.f.S" = "", "R2.MJ.f.none" = "Mojave", "R2.MJ.f.S" = ""))+
+  facet_wrap(~cultivation_f_g_c, scales = "free_x", labeller = as_labeller(new_labels))+
+  labs(x = "", y = "TB EPS (units)")+
+  theme(axis.ticks.x = element_blank(),
+        #axis.text.x = element_text(hjust = -0.5),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 12),
+        axis.title = element_text(size = 14))
+
+# G EPS
+res_soilchem %>% ggplot()+
+  geom_boxplot(mapping = aes (x = resurrect_desert_treatment, y = g_eps, fill = eps_timepoint))+
+  theme_classic()+
+  scale_fill_discrete(name = "Restortation Timepoint", labels = c("Inoculation", "20 weeks"))+
+  #scale_x_discrete(labels = c("R2.CP.g.none" = "Colorado\n Plateau", "R2.CP.g.S" = "", "R2.MJ.g.none" = "Mojave", "R2.MJ.g.S" = "", "R2.CP.f.none" = "Colorado\n Plateau", "R2.CP.f.S" = "", "R2.MJ.f.none" = "Mojave", "R2.MJ.f.S" = ""))+
+  facet_wrap(~cultivation_f_g_c, scales = "free_x", labeller = as_labeller(new_labels))+
+  labs(x = "", y = "G EPS (units)")+
+  theme(axis.ticks.x = element_blank(),
+        #axis.text.x = element_text(hjust = -0.5),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 12),
+        axis.title = element_text(size = 14))
+
+
+# Total EPS
+res_soilchem %>% ggplot()+
+  geom_boxplot(mapping = aes (x = resurrect_desert_treatment, y = total_eps, fill = eps_timepoint))+
+  theme_classic()+
+  scale_fill_discrete(name = "Restortation Timepoint", labels = c("Inoculation", "20 weeks"))+
+  #scale_x_discrete(labels = c("R2.CP.g.none" = "Colorado\n Plateau", "R2.CP.g.S" = "", "R2.MJ.g.none" = "Mojave", "R2.MJ.g.S" = "", "R2.CP.f.none" = "Colorado\n Plateau", "R2.CP.f.S" = "", "R2.MJ.f.none" = "Mojave", "R2.MJ.f.S" = ""))+
+  facet_wrap(~cultivation_f_g_c, scales = "free_x", labeller = as_labeller(new_labels))+
+  labs(x = "", y = "Total EPS (units)")+
+  theme(axis.ticks.x = element_blank(),
+        #axis.text.x = element_text(hjust = -0.5),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 12),
+        axis.title = element_text(size = 14))
+
+# slake
+res_soilchem %>% 
+  filter(eps_timepoint == "2") %>%
+  ggplot()+
+  geom_boxplot(mapping = aes (x = resurrect_desert_treatment, y = slake))+
+  theme_classic()+
+  #scale_fill_discrete(name = "Restortation Timepoint", labels = c("Inoculation", "20 weeks"))+
+  #scale_x_discrete(labels = c("R2.CP.g.none" = "Colorado\n Plateau", "R2.CP.g.S" = "", "R2.MJ.g.none" = "Mojave", "R2.MJ.g.S" = "", "R2.CP.f.none" = "Colorado\n Plateau", "R2.CP.f.S" = "", "R2.MJ.f.none" = "Mojave", "R2.MJ.f.S" = ""))+
+  facet_wrap(~cultivation_f_g_c, scales = "free_x", labeller = as_labeller(new_labels))+
+  labs(x = "", y = "Soil Stability (units)")+
+  theme(axis.ticks.x = element_blank(),
+        #axis.text.x = element_text(hjust = -0.5),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 12),
+        axis.title = element_text(size = 14))
+
+```
+
+## Dot plots of the difference between inoculation and 20 weeks later, perhaps vertically for each treatment
+```{r}
+soilchem_summary <- res_soilchem %>% 
+  group_by(resurrect_desert_treatment, cultivation_f_g_c, eps_timepoint) %>%
+  summarise(meanChla = mean(chla, na.rm = TRUE),
+            sdChla = sd(chla, na.rm = TRUE),
+            meanTotalEPS = mean(total_eps, na.rm = TRUE),
+            sdTotalEPS = sd(total_eps, na.rm = TRUE),
+            medianSlake = median(slake, na.rm = TRUE),
+            sdSlake = sd(slake, na.rm = TRUE))
+
+soilchem_summary_0 <- soilchem_summary %>% filter(eps_timepoint == 0)
+soilchem_summary_2 <- soilchem_summary %>% filter(eps_timepoint == 2)
+soilchem_summary_diff <- soilchem_summary_0
+colnames(soilchem_summary_diff) <- c("resurrect_desert_treatment", "cultivation_f_g_c", "eps_timepoint", "meanChla_0", "sdChla_0", "meanTotalEPS_0", "sdTotalEPS_0", "medianSlake_0", "sdSlake_0")
+colnames(soilchem_summary_2) <- c("resurrect_desert_treatment", "cultivation_f_g_c", "eps_timepoint", "meanChla_2", "sdChla_2", "meanTotalEPS_2", "sdTotalEPS_2", "medianSlake_2", "sdSlake_2")
+soilchem_summary_2 <- soilchem_summary_2 %>% dplyr::select(!eps_timepoint)
+soilchem_summary_diff <- left_join(soilchem_summary_diff, soilchem_summary_2, by = c("resurrect_desert_treatment", "cultivation_f_g_c"))
+
+# calculate the differences
+soilchem_summary_diff$Chla_diff <- soilchem_summary_diff$meanChla_2 - soilchem_summary_diff$meanChla_0
+soilchem_summary_diff$Chla_diff_sd <- sqrt(((soilchem_summary_diff$sdChla_2)^2)+((soilchem_summary_diff$sdChla_0)^2))
+
+soilchem_summary_diff$TotalEPS_diff <- soilchem_summary_diff$meanTotalEPS_2 - soilchem_summary_diff$meanTotalEPS_0
+soilchem_summary_diff$TotalEPS_diff_sd <- sqrt(((soilchem_summary_diff$sdTotalEPS_2)^2)+((soilchem_summary_diff$sdTotalEPS_0)^2))
+
+soilchem_summary_diff$slake_diff <- soilchem_summary_diff$medianSlake_2 - soilchem_summary_diff$medianSlake_0
+soilchem_summary_diff$slake_diff_sd <- sqrt(((soilchem_summary_diff$sdSlake_2)^2)+((soilchem_summary_diff$sdSlake_0)^2))
+
+# Plotting 
+soilchem_summary_diff$cultivation_f_g_c <- factor(soilchem_summary_diff$cultivation_f_g_c, levels = c("g", "f"))
+#cultivation_labels <- c("Field Cultivation", "Greenhouse Cultivation")
+names(new_labels) <- c("g","f")
+
+soilchem_summary_diff$cultivation_names <- c("control, no shade", "control, shade", "Colorado Plateau, no shade", "Colorado Plateau, shade", "Mojave, no shade", "Mojave, shade","Colorado Plateau, no shade", "Colorado Plateau, shade", "Mojave, no shade", "Mojave, shade")
+
+soilchem_summary_diff$cultivation_names <- factor(soilchem_summary_diff$cultivation_names, levels = c("control, shade", "control, no shade", "Mojave, shade", "Mojave, no shade", "Colorado Plateau, shade", "Colorado Plateau, no shade"))
+
+
+# Chlorophyll a
+soilchem_summary_diff %>%  
+  ggplot() + 
+  geom_vline(xintercept = 0, linetype = "dotted")+
+  geom_point(mapping = aes(y = cultivation_names, x = Chla_diff))+
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = Chla_diff-Chla_diff_sd, xmax = Chla_diff+Chla_diff_sd), alpha = 0.5, height = 0.2)+
+  labs(x = "Difference in Chlorophyll a", y = "")+
+  facet_grid(rows = vars(cultivation_f_g_c), scales = "free", space = "free",switch = "y", labeller = labeller(cultivation_f_g_c = new_labels)) +
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))
+
+
+# Total EPS
+soilchem_summary_diff %>%  
+  ggplot() + 
+  geom_vline(xintercept = 0, linetype = "dotted")+
+  geom_point(mapping = aes(y = cultivation_names, x = TotalEPS_diff))+
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = TotalEPS_diff-TotalEPS_diff_sd, xmax = TotalEPS_diff+TotalEPS_diff_sd), alpha = 0.5, height = 0.2)+
+  labs(x = "Difference in Total EPS", y = "")+
+  facet_grid(rows = vars(cultivation_f_g_c), scales = "free", space = "free",switch = "y", labeller = labeller(cultivation_f_g_c = new_labels)) +
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))
+
+
+# Soil Stability
+soilchem_summary_diff %>%  
+  ggplot() + 
+  geom_vline(xintercept = 0, linetype = "dotted")+
+  geom_point(mapping = aes(y = cultivation_names, x = slake_diff))+
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = slake_diff-slake_diff_sd, xmax = slake_diff+slake_diff_sd), alpha = 0.5, height = 0.2)+
+  labs(x = "Difference in Soil Stability (slake score)", y = "")+
+  facet_grid(rows = vars(cultivation_f_g_c), scales = "free", space = "free",switch = "y", labeller = labeller(cultivation_f_g_c = new_labels)) +
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))
+
+```
+
+
+## Plotting without difference
+Get the initials
+```{r}
+soilchem_initials <- soilchem %>% filter(phase == "initial")
+
+soilchem_initials_summary <- soilchem_initials %>% 
+  group_by(desert_source) %>% 
+  summarise(meanChla = mean(chla),
+            sdChla = sd(chla),
+            meanTotalEPS = mean(total_eps),
+            sdTotalEPS = sd(total_eps))
+
+# Axis Labels 
+soilchem_summary$cultivation_f_g_c <- factor(soilchem_summary$cultivation_f_g_c, levels = c("g", "f"))
+#cultivation_labels <- c("Field Cultivation", "Greenhouse Cultivation")
+names(new_labels) <- c("g","f")
+
+soilchem_summary$cultivation_names <- NA
+soilchem_summary$cultivation_names <- c("Colorado Plateau, no shade", "Colorado Plateau, no shade", "Colorado Plateau, shade", "Colorado Plateau, shade", "control, no shade", "control, no shade", "control, shade", "control, shade", "Mojave, no shade", "Mojave, no shade", "Mojave, shade", "Mojave, shade","Colorado Plateau, no shade", "Colorado Plateau, no shade", "Colorado Plateau, shade", "Colorado Plateau, shade", "Mojave, no shade", "Mojave, no shade", "Mojave, shade", "Mojave, shade")
+
+soilchem_summary$cultivation_names <- factor(soilchem_summary$cultivation_names, levels = c("control, shade", "control, no shade", "Mojave, shade", "Mojave, no shade", "Colorado Plateau, shade", "Colorado Plateau, no shade"))
+
+
+# Chlorophyll a
+soilchem_summary %>%  
+  #filter(eps_timepoint == 0) %>%
+  filter(eps_timepoint == 2) %>%
+  ggplot() + 
+  geom_point(mapping = aes(y = cultivation_names, x = meanChla))+ # color = eps_timepoint
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = meanChla-sdChla, xmax = meanChla+sdChla), alpha = 0.5, height = 0.2)+
+  labs(x = "Chlorophyll a (ug/g soil)", y = "")+
+  facet_grid(rows = vars(cultivation_f_g_c), scales = "free", space = "free", switch = "y", labeller = labeller(cultivation_f_g_c = new_labels)) +
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12)) +
+  xlim(0,8)
+
+
+# Total EPS
+soilchem_summary %>% 
+  #filter(eps_timepoint == 0) %>%
+  filter(eps_timepoint == 2) %>%
+  ggplot() + 
+  geom_point(mapping = aes(y = cultivation_names, x = meanTotalEPS))+
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = meanTotalEPS-sdTotalEPS, xmax = meanTotalEPS+sdTotalEPS), alpha = 0.5, height = 0.2)+
+  labs(x = "Total EPS (ug/g soil)", y = "")+
+  facet_grid(rows = vars(cultivation_f_g_c), scales = "free", space = "free", switch = "y", labeller = labeller(cultivation_f_g_c = new_labels)) +
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))+
+  xlim(0,1400)
+
+# Soil Stability
+soilchem_summary %>%  
+  #filter(eps_timepoint == 0) %>%
+  filter(eps_timepoint == 2) %>%
+  ggplot() + 
+  geom_point(mapping = aes(y = cultivation_names, x = medianSlake))+
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = medianSlake-sdSlake, xmax = medianSlake+sdSlake), alpha = 0.5, height = 0.2)+
+  labs(x = "Soil Stability (slake score)", y = "")+
+  facet_grid(rows = vars(cultivation_f_g_c), scales = "free", space = "free",switch = "y", labeller = labeller(cultivation_f_g_c = new_labels)) +
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))
+```
+
+
+## Statistical Analysis for Figure in main text ####
+subset so not comparing irrelevant types
+```{r}
+# CP
+res_soilchem_CP <- res_soilchem %>% filter(desert_source == "CP")
+unique(res_soilchem_CP$resurrect_desert_treatment)
+kruskal.test(chla ~ resurrect_desert_treatment, data = res_soilchem_CP)
+# Kruskal-Wallis chi-squared = 10.809, df = 3, p-value = 0.0128
+dunnTest(chla ~ resurrect_desert_treatment, data = res_soilchem_CP)
+# F_CP_J - F_CP_JC -3.0332834 0.002419083 0.01451450
+# MJ
+res_soilchem_MJ <- res_soilchem %>% filter(desert_source == "MJ")
+unique(res_soilchem_MJ$resurrect_desert_treatment)
+kruskal.test(chla ~ resurrect_desert_treatment, data = res_soilchem_MJ)
+# Kruskal-Wallis chi-squared = 0.55193, df = 3, p-value = 0.9073
+
+# Total EPS
+# CP
+#res_soilchem_CP <- res_soilchem %>% filter(desert_source == "CP")
+#unique(res_soilchem_CP$resurrect_desert_treatment)
+kruskal.test(total_eps ~ resurrect_desert_treatment, data = res_soilchem_CP)
+# Kruskal-Wallis chi-squared = 2.4538, df = 3, p-value = 0.4837
+
+# MJ
+#res_soilchem_MJ <- res_soilchem %>% filter(desert_source == "MJ")
+#unique(res_soilchem_MJ$resurrect_desert_treatment)
+kruskal.test(total_eps ~ resurrect_desert_treatment, data = res_soilchem_MJ)
+# Kruskal-Wallis chi-squared = 3.2477, df = 3, p-value = 0.355
+
+# Slake
+# CP
+kruskal.test(slake ~ resurrect_desert_treatment, data = res_soilchem_CP)
+# Kruskal-Wallis chi-squared = 12.878, df = 3, p-value = 0.004908
+dunnTest(slake ~ resurrect_desert_treatment, data = res_soilchem_CP)
+# F_CP_J - F_CP_JC  2.88224237 0.003948559 0.01579424
+# F_CP_JC - G_CP -2.92738428 0.003418262 0.01709131
+# F_CP_JC - G_CP_S -3.06281000 0.002192692 0.01315615
+res_soilchem_CP %>% ggplot()+
+  geom_boxplot(mapping = aes(x = resurrect_desert_treatment, y = slake))+
+  theme_classic() # note field+shade has lower soil stability than the others 
+
+# MJ
+kruskal.test(slake ~ resurrect_desert_treatment, data = res_soilchem_MJ)
+# Kruskal-Wallis chi-squared = 12.325, df = 3, p-value = 0.006348
+dunnTest(slake ~ resurrect_desert_treatment, data = res_soilchem_MJ)
+# F_MJ_J - G_MJ_S -3.2505647 0.00115176 0.006910563
+```
+
+
+## Plotting a better way
+```{r}
+# First calculate values for the controls (uninoculated at Resurrect)
+soilchem_resurrectControls <- soilchem %>%
+  filter(desert_source == "Control") %>%
+  filter(phase == "resurrect")
+# Chla
+mean(soilchem_resurrectControls$chla, na.rm = T)
+sd(soilchem_resurrectControls$chla, na.rm = T)
+# Total EPS
+mean(soilchem_resurrectControls$total_eps, na.rm = T)
+sd(soilchem_resurrectControls$total_eps, na.rm = T)
+# Slake
+median(soilchem_resurrectControls$slake, na.rm = T)
+sd(soilchem_resurrectControls$slake, na.rm = T)
+
+# Calculate the values for the inoculated plots 
+soilchem_summary2 <- res_soilchem %>% 
+  group_by(resurrect_desert_treatment, desert_source, cultivation_f_g_c, eps_timepoint) %>%
+  summarise(meanChla = mean(chla, na.rm = TRUE),
+            sdChla = sd(chla, na.rm = TRUE),
+            meanTotalEPS = mean(total_eps, na.rm = TRUE),
+            sdTotalEPS = sd(total_eps, na.rm = TRUE),
+            medianSlake = median(slake, na.rm = TRUE),
+            sdSlake = sd(slake, na.rm = TRUE))
+  
+soilchem_summary2$cultivation_names <- NA
+soilchem_summary2$cultivation_names <- c("field, no shade", "field, no shade", "field, shade", "field, shade", "field control, no shade", "field control, no shade", "field control, shade", "field control, shade", "field, no shade", "field, no shade", "field, shade", "field, shade","greenhouse, no shade", "greenhouse, no shade", "greenhouse, shade", "greenhouse, shade", "greenhouse, no shade", "greenhouse, no shade", "greenhouse, shade", "greenhouse, shade")
+
+soilchem_summary2$cultivation_names <- factor(soilchem_summary2$cultivation_names, levels = c("field control, shade", "field control, no shade", "field, shade", "field, no shade", "greenhouse, shade", "greenhouse, no shade"))
+
+soilchem_summary2$desert_source <- factor(soilchem_summary2$desert_source, levels = c("CP", "MJ","mayberry_control"))
+
+desert_labels <- c("CP"="Colorado\nPlateau", "MJ"="Mojave", "mayberry_control" = "Field\nCultivation\nControls")
+
+chla_lines <- as.data.frame(c("CP", "MJ","mayberry_control"))
+chla_lines$x <- c(1.52, 3.8, 0.48)
+chla_lines$sd <- c(2.13, 3.48, 0.41)
+colnames(chla_lines) <- c("desert_source", "x", "sd")
+chla_lines$desert_source <- factor(chla_lines$desert_source, levels = c("CP", "MJ", "mayberry_control"))
+
+# Chlorophyll a
+soilchem_summary2 %>%  
+  #filter(eps_timepoint == 0) %>%
+  filter(eps_timepoint == 2) %>%
+  ggplot() + 
+  geom_point(mapping = aes(y = cultivation_names, x = meanChla))+ # color = eps_timepoint
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = meanChla-sdChla, xmax = meanChla+sdChla), alpha = 0.5, height = 0.2)+
+  geom_vline(data = chla_lines, mapping = aes(xintercept = x), color = "grey30", linetype = "dotted")+
+  labs(x = expression(paste("Chlorophyll a (",mu, "g/g soil)")), y = "")+
+  facet_grid(rows = vars(desert_source), scales = "free", space = "free", switch = "y", labeller = labeller(desert_source = desert_labels)) +
+  scale_y_discrete(labels=c("field control, shade" = bquote(~Amelioration[Uninoculated]~""),
+                            "field control, no shade" = "Field Control",
+                            "field, shade" = bquote(~Amelioration[Field]~""),
+                            "field, no shade" = "Field",
+                            "greenhouse, shade" = bquote(~Amelioration[GH]~""),
+                            "greenhouse, no shade" = "GH"))+
+  #facet_grid(rows = vars(cultivation_f_g_c), scales = "free", space = "free", switch = "y", labeller = labeller(cultivation_f_g_c = new_labels)) +
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.y.left = element_text(angle = 0),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))
+  #xlim(-0.5,4.5)
+
+# ggsave("figures/chla_rest2.pdf", width = 7, height = 6)
+
+
+# Total EPS
+eps_lines <- as.data.frame(c("CP", "MJ","mayberry_control"))
+eps_lines$x <- c(832, 1057, 774)
+eps_lines$sd <- c(274, 275, 156)
+colnames(eps_lines) <- c("desert_source", "x", "sd")
+eps_lines$desert_source <- factor(eps_lines$desert_source, levels = c("CP", "MJ", "mayberry_control"))
+
+soilchem_summary2 %>% 
+  #filter(eps_timepoint == 0) %>%
+  filter(eps_timepoint == 2) %>%
+  ggplot() + 
+  geom_point(mapping = aes(y = cultivation_names, x = meanTotalEPS))+
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = meanTotalEPS-sdTotalEPS, xmax = meanTotalEPS+sdTotalEPS), alpha = 0.5, height = 0.2)+
+  geom_vline(data = eps_lines, mapping = aes(xintercept = x), color = "grey30", linetype = "dotted")+
+  labs(x = "Total EPS (ug/g soil)", y = "")+
+  facet_grid(rows = vars(desert_source), scales = "free", space = "free", switch = "y", labeller = labeller(desert_source = desert_labels)) +
+  scale_y_discrete(labels=c("field control, shade" = bquote(~Amelioration[Uninoculated]~""),
+                            "field control, no shade" = "Field Control",
+                            "field, shade" = bquote(~Amelioration[Field]~""),
+                            "field, no shade" = "Field",
+                            "greenhouse, shade" = bquote(~Amelioration[GH]~""),
+                            "greenhouse, no shade" = "GH"))+
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.y.left = element_text(angle = 0),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))+
+  xlim(0,1400)
+
+#ggsave("figures/totaleps_rest2.pdf", width = 7, height = 6)
+
+
+# Slake
+# We did not measure slake for the reference biocrusts but we did for the controls 
+slake_lines <- as.data.frame(c("CP", "MJ","mayberry_control"))
+slake_lines$x <- c(NA, NA, 2)
+slake_lines$sd <- c(NA, NA, 1.2)
+colnames(slake_lines) <- c("desert_source", "x", "sd")
+slake_lines$desert_source <- factor(slake_lines$desert_source, levels = c("CP", "MJ", "mayberry_control"))
+
+
+soilchem_summary2 %>%  
+  #filter(eps_timepoint == 0) %>%
+  filter(eps_timepoint == 2) %>%
+  ggplot() + 
+  geom_point(mapping = aes(y = cultivation_names, x = medianSlake))+
+  geom_errorbarh(mapping = aes(y = cultivation_names, xmin = medianSlake-sdSlake, xmax = medianSlake+sdSlake), alpha = 0.5, height = 0.2)+
+  geom_vline(data = slake_lines, mapping = aes(xintercept = x), color = "grey30", linetype = "dotted")+
+  labs(x = "Soil Stability (slake score)", y = "")+
+  facet_grid(rows = vars(desert_source), scales = "free", space = "free",switch = "y", labeller = labeller(desert_source = desert_labels)) +
+  scale_y_discrete(labels=c("field control, shade" = bquote(~Amelioration[Uninoculated]~""),
+                            "field control, no shade" = "Field Control",
+                            "field, shade" = bquote(~Amelioration[Field]~""),
+                            "field, no shade" = "Field",
+                            "greenhouse, shade" = bquote(~Amelioration[GH]~""),
+                            "greenhouse, no shade" = "GH"))+
+  theme_classic()+
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 12))+
+  xlim(0,6)
+
+#ggsave("figures/slake_restoration.pdf", width = 5.5, height = 6)
+```
+
+
+## Now a comparison with controls
+if desert_source says "mayberry control" then new column gets a "C" otherwise it is inoculated
+```{r}
+res_soilchem$control <- "N"
+res_soilchem$control[res_soilchem$desert_source == "mayberry_control"] <- "C"
+unique(res_soilchem$control)
+kruskal.test(chla ~ control, data = res_soilchem)
+# Kruskal-Wallis chi-squared = 1.0436, df = 1, p-value = 0.307
+#
+kruskal.test(total_eps ~ control, data = res_soilchem)
+# Kruskal-Wallis chi-squared = 3.3478, df = 1, p-value = 0.06729
+#
+kruskal.test(slake ~ control, data = res_soilchem)
+#Kruskal-Wallis chi-squared = 0.012348, df = 1, p-value = 0.9115
+```
+
+
+## Now a comparison with initials
+```{r}
+soilchem_initials$resurrect_desert_treatment <- "initial"
+res_soilchem <- res_soilchem %>% select(!control)
+res_soilchem_i <- rbind(res_soilchem, soilchem_initials)
+unique(res_soilchem_i$resurrect_desert_treatment)
+kruskal.test(chla ~ resurrect_desert_treatment, data = res_soilchem_i)
+# Kruskal-Wallis chi-squared = 20.799, df = 10, p-value = 0.02254
+dunnTest(chla ~ resurrect_desert_treatment, data = res_soilchem_i)
+# 48  F_CP_J - initial -3.37452239 0.000739439 0.04066914
+#
+kruskal.test(total_eps ~ resurrect_desert_treatment, data = res_soilchem_i)
+# Kruskal-Wallis chi-squared = 14.938, df = 10, p-value = 0.1343
+#
+#There are no reference biocrust values for slake 
+plot(soilchem_resurrectControls$slake^2,soilchem_resurrectControls$chla)
+plot(soilchem_resurrectControls$slake^2,soilchem_resurrectControls$total_eps)
+```
+
+
+# Other Analyses
+```{r}
+# the resurrect controls are here:
+temp_controls <- soilchem_resurrectControls %>% filter(eps_timepoint %in% c("0","2")) %>% filter(!is.na(chla))
+# the resurrect samples are here: 
+temp <- res_soilchem %>% 
+  group_by(resurrect_desert_treatment, desert_source, cultivation_f_g_c, eps_timepoint)
+# 
+colnames(temp_controls) == colnames(temp)
+# merge them together
+df <- rbind(temp_controls, temp)
+# and merge the initials too
+colnames(soilchem_initials) == colnames(df)
+df <- rbind(df, soilchem_initials)
+df$resurrect_desert_treatment[which(df$phase == "initial")] <- "initial"
+
+
+# now make some labels
+# CP only
+df_CP <- df %>% filter(!desert_source %in% c("MJ", "mayberry_control"))
+
+kruskal.test(chla ~ resurrect_desert_treatment, data = df_CP)
+# Kruskal-Wallis chi-squared = 16.29, df = 5, p-value = 0.006063
+dunnTest(chla ~ resurrect_desert_treatment, data = df_CP, method = "holm")
+# 12  F_CP_J - initial -3.0239232 0.002495198 0.03742797
+
+kruskal.test(total_eps ~ resurrect_desert_treatment, data = df_CP)
+# Kruskal-Wallis chi-squared = 4.1702, df = 5, p-value = 0.5252
+#dunnTest(total_eps ~ resurrect_desert_treatment, data = df_CP, method = "holm")
+
+kruskal.test(slake ~ resurrect_desert_treatment, data = df_CP)
+# Kruskal-Wallis chi-squared = 12.478, df = 4, p-value = 0.01413
+dunnTest(slake ~ resurrect_desert_treatment, data = df_CP, method = "holm")
+# F_CP_JC - G_CP_S -2.96223909 0.003054105 0.03054105
+# F_CP_JC - G_CP -2.91424994 0.003565443 0.03208899
+# F_CP_J - F_CP_JC  2.79427708 0.005201589 0.04161271
+
+# MJ only
+df_MJ <- df %>% filter(!desert_source %in% c("CP", "mayberry_control", "SN"))
+
+kruskal.test(chla ~ resurrect_desert_treatment, data = df_MJ)
+# Kruskal-Wallis chi-squared = 11.591, df = 5, p-value = 0.04084
+dunnTest(chla ~ resurrect_desert_treatment, data = df_MJ, method = "holm")
+#  no significant comparisons
+
+kruskal.test(total_eps ~ resurrect_desert_treatment, data = df_MJ)
+# Kruskal-Wallis chi-squared = 7.8217, df = 5, p-value = 0.1663
+dunnTest(total_eps ~ resurrect_desert_treatment, data = df_MJ, method = "holm")
+
+kruskal.test(slake ~ resurrect_desert_treatment, data = df_MJ)
+# Kruskal-Wallis chi-squared = 10.023, df = 4, p-value = 0.04004
+dunnTest(slake ~ resurrect_desert_treatment, data = df_MJ, method = "holm")
+# F_MJ_J - G_MJ_S -2.90831040 0.003633875 0.03633875
+```
