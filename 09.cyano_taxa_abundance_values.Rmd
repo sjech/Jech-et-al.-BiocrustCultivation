@@ -1,0 +1,683 @@
+---
+title: '09.cyano_taxa_abundance_values'
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+-  stacked bar plots of absolute abundance at the genus level for cyanos which will go in the main manuscript
+- a list or easy to read table of cyano genera absolute abundances across treatments which can be used to inform the final table of the paper
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+```
+
+## Load Data
+```{r}
+cesu_16S_ps <- readRDS("data_output/mbcyano_processed_filt_ps.rds")
+cyanoassignments <- read.csv("data/cesucyanoassignments265.csv")
+cyanoassignments$GS <- paste(cyanoassignments$G_checked, cyanoassignments$S_checked)
+qPCR <- read.csv("data/cesuqPCR.csv")
+```
+
+# Get to know the data, create labels, delete extra samples and blanks
+```{r}
+cesu_16S_ps@sam_data@names #colnames for the sample_data information in this phyloseq object
+cesu_16S_ps@sam_data[["names"]] # view all samples
+
+# Create a combo label where sample types are maintained but the replicate is not included (project, farm or greenhouse, desert, water, substrate)
+cesu_16S_ps@sam_data$comboLabel <- paste(cesu_16S_ps@sam_data$project ,cesu_16S_ps@sam_data$farmGreenhouse, cesu_16S_ps@sam_data$desert, cesu_16S_ps@sam_data$water, cesu_16S_ps@sam_data$shade, cesu_16S_ps@sam_data$priorShade,cesu_16S_ps@sam_data$substrate, sep = ".")
+unique(cesu_16S_ps@sam_data$comboLabel)
+table(cesu_16S_ps@sam_data$comboLabel)
+
+#Setup. Delete P and WP substrates, delete water regime B
+# This means I can compare inocula growth in the greenhouse on no substrate, with and without shade (different shade types I think). I will only have timepoint 2 for mayberry farm. I have two timepoints for the greenhouse. I have control values at the greenhouse and farm at the end of cultivation. 
+
+# Subsetting by sample name (remove all sods & watering regime B & blanks):
+# now actually remove them in the ps object
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps, !water %in% c("B"))
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !substrate %in% c("P", "WP"))
+unique(cesu_16S_ps_subset@sam_data$comboLabel)
+table(cesu_16S_ps_subset@sam_data$comboLabel)
+# one of the blanks has an incorrect value for substrate and shade so it is separating out from the rest in the combolabels - fix it when you melt
+# Contruct other useful labels?
+# remove blanks for now
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !project %in% c("Blank"))
+
+# check it
+cesu_16S_ps_subset@sam_data[["comboLabel"]] # ok
+# the initials are still in there
+
+# factor the label levels for plotting
+cesu_16S_ps_subset@sam_data$comboLabel <- factor(cesu_16S_ps_subset@sam_data$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+cesu_16S_ps_subset@sam_data$desert <- factor(cesu_16S_ps_subset@sam_data$desert, levels = c("control", "C", "CP", "MJ"))
+
+
+#Get count of total reads to calculate relative abundance
+table(phyloseq::tax_table(cesu_16S_ps_subset)[, "Phylum"]) #40 Phyla included
+# get the total read count per sample
+reads_per_sample <- as.data.frame (sample_sums(cesu_16S_ps_subset)) # they are all different because we did not rarefy in this dataset
+#copy the rownames to a column
+reads_per_sample <- tibble::rownames_to_column(reads_per_sample, "Sample")
+# change the name of the second column
+colnames(reads_per_sample) <- c("Sample", "totalReads")
+nrow(reads_per_sample) # 143 samples are included
+```
+
+## Absolute Abundance Calculations 
+```{r}
+# melt the data out of phyloseq format and into long dataframe
+cesu_psmelt <- psmelt(cesu_16S_ps_subset) #this takes some time, patience!
+
+# need to correct the names of cyanobacteria genera/species with Cydrasil
+head(cesu_psmelt)
+# add in the Cydrasil names
+cyanoassignments_GS <- cyanoassignments %>% dplyr::select("ASV","GS")
+cesupsmelt <- left_join(cesu_psmelt, cyanoassignments_GS, by = c("OTU" = "ASV")) 
+
+# text issues with the names 
+cesupsmelt$GS <- trimws(cesupsmelt$GS, which = c("right"))
+unique(cesupsmelt$GS) # 50 unique GS levels
+# fix some of the names 
+cesupsmelt$GS[cesupsmelt$GS == "Chroococidopsis"] <- "Chroococcidiopsis"
+# Deal with the names
+cesupsmelt$GS_all <- cesupsmelt$GS
+cesupsmelt$GS_all <- ifelse(is.na(cesupsmelt$GS_all), paste(cesupsmelt$Genus), cesupsmelt$GS_all)
+unique(cesupsmelt$GS_all) # 698 unique GS_all levels
+
+
+# Calculate absolute abundance for each ASV (all phyla)
+# merge with total reads in sample
+cesupsmelt_abso <- inner_join(cesupsmelt, reads_per_sample, by = "Sample")
+# divide the Abundance column by the total reads column
+cesupsmelt_abso$relAbund <- cesupsmelt_abso$Abundance / cesupsmelt_abso$totalReads
+
+# Merge with qPCR counts
+qPCR_subset <- qPCR %>% dplyr::select(SampleID, qPCR_16S_copies, mass_soil_extracted_for_DNA_g)
+cesupsmelt_abso <- inner_join(cesupsmelt_abso, qPCR_subset, by = c("Sample" = "SampleID"))
+# Calculate absolute abundance per gram soil and adjust the scientific notation
+cesupsmelt_abso$absoAbund <- (((cesupsmelt_abso$relAbund * cesupsmelt_abso$qPCR_16S_copies)) / cesupsmelt_abso$mass_soil_extracted_for_DNA_g) / (10^6)
+
+# Calculate the total absoAbund per sample
+absoAbund_by_sample <- cesupsmelt_abso %>% 
+  group_by(Sample) %>% 
+  summarise(totalabsoAbund = sum(absoAbund)) 
+
+max(absoAbund_by_sample$totalabsoAbund) #86.76
+min(absoAbund_by_sample$totalabsoAbund) #0.09 
+#write.csv(absoAbund_by_sample, "data_output/absoAbund_by_sample.csv", row.names = FALSE) # save for future use
+```
+
+## Cyano Taxa
+```{r}
+# remove all GS that have zero abundance across all samples
+# keep the project to subset for only the CP and MJ initials
+GS_zeroAbund_initial <- cesupsmelt_abso %>%
+  group_by(GS_all, Phylum, project) %>%
+  summarise(GSsumAbund = sum(absoAbund)) # 5138 rows represent all genera or species in the dataset, many have zero abundance across the samples 
+
+# subset for only the CP/MJ initials
+GS_zeroAbund_initial <- GS_zeroAbund_initial %>% filter(project %in% c("CP", "MJ")) # down to 1468 rows
+
+# Remove all entries with zero abundance
+GS_zeroAbund_initial <- GS_zeroAbund_initial %>% filter(GSsumAbund > 0) # that took us down to 401 rows (removed 1067)
+
+# make a plot to see what else needs to be removed - with 401 genera this may be unreadable. Also determine if there are big differences between abundance in the MJ vs. CP lists
+GS_zeroAbund_initial %>%
+  ggplot()+ 
+  geom_point(mapping = aes(y = reorder(GS_all,GSsumAbund), x = GSsumAbund), stat = "identity")+
+  facet_wrap(~project) + 
+  theme_classic()+
+  theme(axis.text.y = element_blank())
+
+# are there some with NA as a name? Yes, remove them
+GS_zeroAbund_initial <- GS_zeroAbund_initial %>% filter(GS_all != "NA") # that took us down to 359 (removed 42 rows)
+
+# Now, group by Phylum and keep only the top 20 genera/species in each Phylum
+GS_top10perPhyla_initial <- GS_zeroAbund_initial %>% arrange(desc(GSsumAbund)) %>% group_by(Phylum, project) %>% slice(1:20)
+# how different are the lists for CP vs. MJ?
+GS_top10perPhyla_initial %>% filter(project == "CP") %>% summarise(sumGSabund = sum(GSsumAbund)) %>% arrange(desc(sumGSabund))
+# Top 10 Phyla for CP are: 
+CP_GS_sumAbsoAbund_initial <- c("Cyanobacteria", "Bacteroidota", "Acidobacteriota", "Proteobacteria", "Verrucomicrobiota", "Crenarchaeota", "Actinobacteriota", "Abditibacteriota", "Myxococcota", "Chloroflexi")
+
+# now subset the list for just these ones
+CP_top10perPhyla_initial <- GS_top10perPhyla_initial %>% filter(project == "CP") %>% filter(Phylum %in% CP_GS_sumAbsoAbund_initial)
+
+# check that all the phyla transferred
+unique(CP_top10perPhyla_initial$Phylum) # yes I got 10
+
+# now I want only the top 10 GS in each phyla
+# first remove GS that you do not want to plot
+CP_top10perPhyla_initial <- CP_top10perPhyla_initial %>% filter(!GS_all %in% c("not identified", "Undefined Nostocales", "Undefined Coleofasciculaceae"))
+CP_top10perPhyla_initial <- CP_top10perPhyla_initial %>% group_by(Phylum) %>% arrange(desc(GSsumAbund)) %>% slice(1:10)
+unique(CP_top10perPhyla_initial$GS_all) # 76 here (not all phyla have 10 GS)
+
+# Do the same process for MJ initials
+GS_top10perPhyla_initial %>% filter(project == "MJ") %>% summarise(sumGSabund = sum(GSsumAbund)) %>% arrange(desc(sumGSabund))
+# Top 10 phyla for MJ are:
+MJ_GS_sumAbsoAbund_initial <- c("Cyanobacteria", "Bacteroidota", "Proteobacteria", "Acidobacteriota", "Crenarchaeota", "Actinobacteriota","Verrucomicrobiota","Myxococcota","Abditibacteriota", "Firmicutes")
+# now subset the but list for just these ones
+MJ_top10perPhyla_initial <- GS_top10perPhyla_initial %>% filter(project == "MJ") %>% filter(Phylum %in% MJ_GS_sumAbsoAbund_initial)
+# check that all the phyla transferred
+unique(MJ_top10perPhyla_initial$Phylum) # yes I got 10
+# now I want only the top 10 GS in each phyla
+# first remove GS that you do not want to plot
+MJ_top10perPhyla_initial <- MJ_top10perPhyla_initial %>% filter(!GS_all %in% c("not identified", "Undefined Nostocales", "Undefined Coleofasciculaceae"))
+MJ_top10perPhyla_initial <- MJ_top10perPhyla_initial %>% group_by(Phylum) %>% arrange(desc(GSsumAbund)) %>% slice(1:10)
+unique(MJ_top10perPhyla_initial$GS_all) #62 here (not all phyla have 10 GS)
+
+# merge the two separate CP and MJ dataframes back into one
+#top10perPhyla_initial <- rbind(CP_top10perPhyla_initial, MJ_top10perPhyla_initial) # 138 rows (62+76 rows) checks out!
+
+# subsetting for the names of the GS_all that should be included in the figures (be careful here because there may be overlap for the CP vs. MJ)...maybe make two separate lists
+GS_to_keep_CP <- CP_top10perPhyla_initial$GS_all # 76 here and they are unique
+GS_to_keep_MJ <- MJ_top10perPhyla_initial$GS_all # 62 here and they are unique
+# combine the lists so that there is only 1. This is ok because when I plot, I can still choose which GS to plot for CP vs. MJ graphs
+GS_to_keep <- c(GS_to_keep_CP, GS_to_keep_MJ)
+GS_to_keep <- unique(GS_to_keep) # dropped to 93 GS_all that are unique
+
+# Keep these in the main dataframe and remove everything else (everything above was testing)
+cesupsmelt_top10perPhyla <- cesupsmelt_abso %>% filter(!is.na(GS_all)) # 2579148 rows here.  
+# keep the correct GS_all 
+cesupsmelt_top10perPhyla <- cesupsmelt_top10perPhyla[cesupsmelt_top10perPhyla$GS_all %in% GS_to_keep, ]
+# check that we kept the right ones
+unique(cesupsmelt_top10perPhyla$project)
+unique(cesupsmelt_top10perPhyla$GS_all) # I have 93 of them 
+
+# # For the paper calculate some of the top cyano GS for each type of intact biocrust and get their percentages
+# GS_zeroAbund_initial %>% filter(project == "CP") %>% filter(Phylum == "Cyanobacteria") %>% ungroup() %>% summarise(sum = sum(GSsumAbund))
+# # 19 for CP
+# GS_zeroAbund_initial %>% filter(project == "MJ") %>% filter(Phylum == "Cyanobacteria") %>% ungroup() %>% summarise(sum = sum(GSsumAbund))
+# # 17.4 for MJ
+# 
+# # CP details looking at dataframe CP_top10perPhyla_initial
+# # M.vag abundance
+# 15.05/19 # 79%
+# # Arizonema
+# 0.32/19 # 1.7%
+# # MJ details looking at dataframe MJ_top10perPhyla_initial
+# # M.vag
+# 6.42/17.4 # 37%
+# # Scytonema
+# 1.57/17.4 # 9%
+# # Schizothrix
+# 0.95/17.4 #5.5%
+# # Funiculus 
+# 0.92/17.4 #5.3%
+# # Prifilum
+# 0.877/17.4 # 5%
+# # P. brasiliensis
+# 0.6/17.4 # 3%
+```
+
+
+# Now back to the calculations
+```{r}
+# check that the sum of absoAbund does not equal the total absoAbund in the sample because we still need to create an Other category
+phyla_groups_totalAbund <- cesupsmelt_top10perPhyla %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(absoAbund))
+# call up the totals to compare 
+phyla_groups_totalAbund %>% arrange(desc(sum))
+absoAbund_by_sample %>% arrange(desc(totalabsoAbund))
+
+# They are close, but not exactly the same because we removed some GS so now we create the other category as the difference 
+# THIS ISN"T NEEDED UNLESS YOU ARE MAKING A COMPOSITION BAR PLOT
+cesupsmelt_top10perPhyla <- inner_join(cesupsmelt_top10perPhyla, absoAbund_by_sample, by = "Sample")
+phyla_groups_totalAbund <- inner_join(phyla_groups_totalAbund, absoAbund_by_sample, by = "Sample")
+
+# add a new column which contains the absolute abundance value for the Other category
+phyla_groups_totalAbund$other <- (phyla_groups_totalAbund$totalabsoAbund - phyla_groups_totalAbund$sum)
+# delete the sum column and the total absoabund column
+phyla_groups_totalAbund <- phyla_groups_totalAbund %>%
+  dplyr::select(Sample, other)
+#add column which is "Other" repeated
+phyla_groups_totalAbund$GS_all <- "Other"
+#change column header "other" to absoAbund
+colnames(phyla_groups_totalAbund)[which(names(phyla_groups_totalAbund) == "other")] <- "absoAbund"
+
+#calculate the summary for absoAbund at Sample and GS level for only the GS we want 
+summary_cesupsmelt_top10perPhyla <- cesupsmelt_top10perPhyla %>% 
+  group_by(Sample, GS_all) %>% 
+  summarise(absoAbund = sum(absoAbund)) # in this case, absoAbund is a sum of all the ASVs with that taxonomic classification
+
+# rbind the "Other" values to the dataframe
+groups4 <- rbind(summary_cesupsmelt_top10perPhyla, phyla_groups_totalAbund)
+
+# Now check that they sum to the total absolute abundance expected per sample
+groups4 %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(absoAbund))
+# call up the totals to compare 
+absoAbund_by_sample ## YES they match
+
+
+# add in the grouping variables so that you can plot them  
+label_list <- cesupsmelt %>% 
+  dplyr::select(comboLabel, Sample, project, desert, shade, priorShade, farmGreenhouse) # maybe add more variables here for faceting properly
+label_list <- distinct(label_list) # remove the duplicates
+groups4 <- left_join(groups4, label_list, by = "Sample")
+unique(groups4$project) 
+
+
+# All together but average (not every replicate)
+# first calculate the averages
+# create grouping label if needed 
+groups4_aggregate <- groups4 %>% 
+  group_by(desert, project, GS_all) %>%
+  summarise(meanabsoAbund = mean(absoAbund),
+            sdabsoAbund = sd(absoAbund))
+
+# # For each GS_all, you need to add a column to describe the phylum that it belongs to...
+# # subset the dataframe for the GS_to_keep
+# phyla_GS_to_keep <- cesupsmelt_abso %>% dplyr::select(Phylum, GS_all)
+# # remove the ones that are NA in GS_all
+# phyla_GS_to_keep <- phyla_GS_to_keep %>% filter(GS_all != "NA")
+# # remove duplicates
+# phyla_GS_to_keep <- distinct(phyla_GS_to_keep)
+# # merge the phyla column onto the groups4_aggregate dataframe based on the GS_all column
+# groups4_aggregate_temp <- inner_join(groups4_aggregate, phyla_GS_to_keep, by = "GS_all")
+# #unique(groups4_aggregate_temp$GS_all)
+# # check this to make sure I have the right number of GS. The object "GS_to_keep" is length 93 and so is this groups4_aggregate_temp object so should be right 
+
+
+# Try a plot 
+# groups4_aggregate_temp$project <- factor(groups4_aggregate_temp$project, levels = c("CP", "MJ", "GH0", "GH1", "MB2", "R0", "R2"))
+
+# groups4_aggregate_temp %>%
+#   filter(Phylum == "Cyanobacteria") %>% #Acidobacteriota, Bacteroidota, Actinobacteriota, Chloroflexi, Crenarchaeota, Planctomycetota, Proteobacteria, Verrucomicrobiota, Cyanobacteria
+#   filter(project %in% c("CP", "MJ", "GH1", "MB2", "R2")) %>%
+#   ggplot(aes(y = meanabsoAbund, x = project, group = GS_all, color = GS_all)) +
+#   geom_point(alpha = 0.8) +
+#   geom_line(alpha = 0.8) +
+#   facet_grid(cols = vars(desert), scales = "free")+
+#   theme_classic()
+
+# Next steps...use the dataframe that was created in the relative abundance section with the correct groupings and merge it here then create the same graphs that I made for relative abundance for absolute abundance and show the top 10 genera/species for each phyla.
+```
+
+
+## PLOT ABSOLUTE ABUNDANCE ##
+These are the same format as the manuscript figures. Points with error bars, all separate graphs
+```{r}
+# calculate the average value for CP and MJ reference crusts. Use the dataset that contains absolute abundance for each sample at the GS_all level
+intact_mean_GS_abso_abund <- groups4 %>% 
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis", "Schizothrix cf-calcicola", "Funiculus","Parifilum")) %>%
+  filter(project %in% c("CP", "MJ")) %>% 
+  group_by(project, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(absoAbund),
+            sdAbsoAbund = sd(absoAbund)) # gives me values for CP and MJ reference biocrusts
+
+
+# calculate the greenhouse cultivation initial value. Use the same dataset. WE ARE NOT USING THESE VALUES BUT THEY ARE SIMILAR TO THE CALCULATED STATIC COMMUNITY VALUES
+# ghInitial_mean_GS_abso_abund <- groups4 %>%
+#   filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis", "Schizothrix cf-calcicola", "Funiculus","Parifilum")) %>%
+#   filter(comboLabel %in% c("GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil")) %>%
+#   group_by(desert, GS_all) %>% 
+#   summarise(meanAbsoAbund = mean(absoAbund),
+#             sdAbsoAbund = sd(absoAbund)) # gives me starting values in the greenhouse for both CP and MJ inoculations
+
+# calculate the greenhouse cultivation no inoculum values. Use the same dataset
+ghNoInoculum_mean_GS_abso_abund <- groups4 %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis", "Schizothrix cf-calcicola", "Funiculus","Parifilum")) %>%
+  filter(comboLabel %in% c("GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil")) %>%
+  group_by(shade, desert, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(absoAbund),
+            sdAbsoAbund = sd(absoAbund)) # gives me no inoculum (control) values in the greenhouse
+
+# calculate the greenhouse static community value. Use the already calculated values (Cyanobacteria)
+# value of cyanos reference biocrusts is in a dataframe
+# value of cyanos in control soils is in a dataframe
+# merge these data then make a new column which calculates the static community
+temp4 <- rep(ghNoInoculum_mean_GS_abso_abund$meanAbsoAbund[9:16],2)
+intact_mean_GS_abso_abund$noInoc <- temp4
+intact_mean_GS_abso_abund$calcStatic <- (0.2*intact_mean_GS_abso_abund$meanAbsoAbund)+(0.8*intact_mean_GS_abso_abund$noInoc)
+# all the GS values are listed in the intact dataframe in the column called "calcStatic"
+
+# get values for shaded and unshaded (both deserts) greenhouse cultivation
+gh_cult_GS_absoAbund <- groups4 %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis", "Schizothrix cf-calcicola", "Funiculus","Parifilum")) %>%
+  filter(comboLabel %in% c("GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil")) %>%
+  group_by(shade, desert, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(absoAbund),
+            sdAbsoAbund = sd(absoAbund)) # gives me no inoculum (control) values in the greenhouse
+
+# Some subsetting for plotting
+intact_mean_GS_abso_abund_CP <- intact_mean_GS_abso_abund %>% 
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis")) %>%
+  filter(project %in% c("CP"))
+
+ghNoInoculum_mean_GS_abso_abund_CP_noShade <- ghNoInoculum_mean_GS_abso_abund %>%
+  filter(shade == "none") %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis"))
+
+ghNoInoculum_mean_GS_abso_abund_CP_Shade <- ghNoInoculum_mean_GS_abso_abund %>%
+  filter(shade == "S") %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis"))
+
+# Greenhouse Cultivation Plot = CP
+
+# factor the GS names so they are in the right order for the plot
+
+gh_cult_GS_absoAbund_CP <- gh_cult_GS_absoAbund %>% filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis")) %>% 
+  filter(desert %in% c("CP"))
+
+gh_cult_GS_absoAbund_CP$GS_all <- factor(gh_cult_GS_absoAbund_CP$GS_all, levels = c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis"))
+
+gh_cult_GS_absoAbund_CP$noInocNoShade <- rep(ghNoInoculum_mean_GS_abso_abund_CP_noShade$meanAbsoAbund,2)
+
+gh_cult_GS_absoAbund_CP$noInocShade <- rep(ghNoInoculum_mean_GS_abso_abund_CP_Shade$meanAbsoAbund,2)
+
+gh_cult_GS_absoAbund_CP$calcStatic <- rep(intact_mean_GS_abso_abund_CP$calcStatic, 2)
+
+GHcolors <- c("darkseagreen", "darkslategrey")
+
+gh_cult_GS_absoAbund_CP %>% 
+  ggplot(mapping = aes(x = GS_all, meanAbsoAbund, y = meanAbsoAbund), color = shade)+
+  geom_rect(data = intact_mean_GS_abso_abund_CP, mapping = aes(xmin = 0.5, xmax = 1.5, ymin = meanAbsoAbund-sdAbsoAbund, ymax= meanAbsoAbund+sdAbsoAbund), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 1.5, y = gh_cult_GS_absoAbund_CP$noInocNoShade, yend = gh_cult_GS_absoAbund_CP$noInocNoShade), linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 1.5, y = gh_cult_GS_absoAbund_CP$noInocShade, yend = gh_cult_GS_absoAbund_CP$noInocShade))+ #no inoculum, shade
+  geom_segment(aes(x = 0.5, xend = 1.5, y = gh_cult_GS_absoAbund_CP$calcStatic, yend = gh_cult_GS_absoAbund_CP$calcStatic), linetype = "dotted")+ #calculated static community
+  geom_point(mapping = aes(color = shade), size = 3, position = position_dodge(0.5))+
+  geom_errorbar(mapping = aes(x = GS_all, ymin = meanAbsoAbund-sdAbsoAbund, ymax = meanAbsoAbund+sdAbsoAbund, color = shade), width = 0.05, position = position_dodge(0.5))+
+  scale_x_discrete()+
+  scale_color_manual(values = GHcolors, guide = "none")+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  facet_wrap(~factor(GS_all, levels = c("Microcoleus vaginatus", "Arizonema", "Scytonema","Crustifilum","Chroococcidiopsis")), scales = "free", ncol = 1)+
+  theme_classic()+
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title = element_text(size = 12, face = "bold"),
+        strip.text.x = element_text(size = 12, face = "italic"),
+        #strip.text.x = element_text(size = 12, face = "bold"),
+        strip.background = element_blank())
+#strip.placement = "right")+
+#ylim(0,10)+
+
+#ggsave("figures/CPcyanoGS_absoAbund_dots_GHcult.pdf", width = 3, height = 9)
+```
+
+# Greenhouse Cultivation Plot = MJ
+```{r}
+# Some Subsetting for Plotting
+intact_mean_GS_abso_abund_MJ <- intact_mean_GS_abso_abund %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")) %>% 
+  filter(project %in% c("MJ"))
+
+ghNoInoculum_mean_GS_abso_abund_MJ_noShade <- ghNoInoculum_mean_GS_abso_abund %>%
+  filter(shade == "none") %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum"))
+
+ghNoInoculum_mean_GS_abso_abund_MJ_Shade <- ghNoInoculum_mean_GS_abso_abund %>% 
+  filter(shade == "S") %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum"))
+
+gh_cult_GS_absoAbund_MJ <- gh_cult_GS_absoAbund %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")) %>%
+  filter(desert %in% c("MJ"))
+
+# factor the GS names so they are in the right order (THIS DIDN'T WORK)
+gh_cult_GS_absoAbund_MJ$GS_all <- factor(gh_cult_GS_absoAbund_MJ$GS_all, levels = c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum"))
+
+gh_cult_GS_absoAbund_MJ$noInocNoShade <- rep(ghNoInoculum_mean_GS_abso_abund_MJ_noShade$meanAbsoAbund,2)
+
+gh_cult_GS_absoAbund_MJ$noInocShade <- rep(ghNoInoculum_mean_GS_abso_abund_MJ_Shade$meanAbsoAbund,2)
+
+gh_cult_GS_absoAbund_MJ$calcStatic <- rep(intact_mean_GS_abso_abund_MJ$calcStatic, 2)
+
+gh_cult_GS_absoAbund_MJ %>% 
+  ggplot(mapping = aes(x = GS_all, y = meanAbsoAbund), color = shade)+
+  geom_rect(data = intact_mean_GS_abso_abund_MJ, mapping = aes(xmin = 0.5, xmax = 1.5, ymin = meanAbsoAbund-sdAbsoAbund, ymax = meanAbsoAbund+sdAbsoAbund), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 1.5, y = gh_cult_GS_absoAbund_MJ$noInocNoShade, yend = gh_cult_GS_absoAbund_MJ$noInocNoShade), linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 1.5, y = gh_cult_GS_absoAbund_MJ$noInocShade, yend = gh_cult_GS_absoAbund_MJ$noInocShade))+ #no inoculum, shade
+  geom_segment(aes(x = 0.5, xend = 1.5, y = gh_cult_GS_absoAbund_MJ$calcStatic, yend = gh_cult_GS_absoAbund_MJ$calcStatic), linetype = "dotted")+ #calculated static community
+  geom_point(mapping = aes(color = shade), size = 3, position = position_dodge(0.5))+
+  geom_errorbar(mapping = aes(x = GS_all, ymin = meanAbsoAbund-sdAbsoAbund, ymax = meanAbsoAbund+sdAbsoAbund, color = shade), width = 0.05, position = position_dodge(0.5))+
+  scale_x_discrete()+
+  scale_color_manual(values = GHcolors, guide = "none")+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  facet_wrap(~factor(GS_all, levels = c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")), scales = "free", ncol = 1)+
+  theme_classic()+
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title = element_text(size = 12, face = "bold"),
+        strip.text.x = element_text(size = 12, face = "italic"),
+        strip.background = element_blank())
+
+#ggsave("figures/MJcyanoGS_absoAbund_dots_GHcult.pdf", width = 3, height = 9)
+```
+
+## FIELD 
+```{r}
+Fieldcolors <- c("darksalmon", "brown4")
+
+# calculate the average value for CP background soil. Use the same dataset
+bareSoil_mean_GS_abso_abund <- groups4 %>%
+  filter(comboLabel %in% c("R2.control.control.NA.NA.none.soil", "R0.control.control.NA.NA.none.soil")) %>%
+  group_by(GS_all) %>% 
+  summarise(meanAbsoAbund = mean(absoAbund),
+            sdAbsoAbund = sd(absoAbund)) # gives me bare soil values on the Colorado Plateau
+
+# calculate the average value for CP no inoculum in the field. Use the same dataset
+fieldNoInoculum_mean_GS_abso_abund <- groups4 %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")) %>%
+  filter(comboLabel %in% c("MB2.NA.C.A.none.NA.N","MB2.NA.C.A.S.NA.JC")) %>%
+  group_by(shade, desert, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(absoAbund),
+            sdAbsoAbund = sd(absoAbund)) # gives me bare soil values on the Colorado Plateau
+
+
+# calculate the field static community value. Use the already calculated values (Cyanobacteria)
+temp5 <- rep(fieldNoInoculum_mean_GS_abso_abund$meanAbsoAbund[9:16], 2)
+intact_mean_GS_abso_abund$fieldNoInoc <- temp5
+intact_mean_GS_abso_abund$fieldCalcStatic <- (0.2*intact_mean_GS_abso_abund$meanAbsoAbund) + (0.8*intact_mean_GS_abso_abund$fieldNoInoc)
+# all the GS values are listed in the intact dataframe in the column called "fieldCalcStatic"
+
+# get values for shaded and unshaded (both deserts) field cultivation (MB2)
+field_cult_GS_absoAbund <- groups4 %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")) %>%
+  filter(comboLabel %in% c("MB2.NA.CP.A.none.NA.N", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "MB2.NA.CP.A.S.NA.JC")) %>%
+  group_by(shade, desert, GS_all) %>% 
+  summarise(meanAbsoAbund = mean(absoAbund),
+            sdAbsoAbund = sd(absoAbund)) # gives me no inoculum (control) values in the field
+
+# Some subsetting for plotting correctly
+intact_mean_GS_abso_abund_CP_field <- intact_mean_GS_abso_abund %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis")) %>%
+  filter(project %in% c("CP"))
+
+fieldNoInoculum_mean_GS_abso_abund_CP_noShade <- fieldNoInoculum_mean_GS_abso_abund %>%
+  filter(shade == "none") %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis"))
+
+fieldNoInoculum_mean_GS_abso_abund_CP_Shade <- fieldNoInoculum_mean_GS_abso_abund %>% 
+  filter(shade == "S") %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis"))
+
+field_cult_GS_absoAbund_CP <- field_cult_GS_absoAbund %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis")) %>%
+  filter(desert %in% c("CP"))
+
+field_cult_GS_absoAbund_CP$GS_all <- factor(field_cult_GS_absoAbund_CP$GS_all, levels = c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis"))
+
+field_cult_GS_absoAbund_CP$noInocNoShade <- rep(fieldNoInoculum_mean_GS_abso_abund_CP_noShade$meanAbsoAbund, 2)
+
+field_cult_GS_absoAbund_CP$noInocShade <- rep(fieldNoInoculum_mean_GS_abso_abund_CP_Shade$meanAbsoAbund, 2)
+
+field_cult_GS_absoAbund_CP$calcStatic <- rep(intact_mean_GS_abso_abund_CP_field$fieldCalcStatic, 2)
+```
+
+
+# Field Cultivation Plot = CP
+```{r}
+field_cult_GS_absoAbund_CP %>% 
+  ggplot(mapping = aes(x = GS_all, y = meanAbsoAbund), color = shade)+
+  geom_rect(data = intact_mean_GS_abso_abund_CP_field, mapping = aes(xmin = 0.5, xmax = 1.5, ymin = meanAbsoAbund-sdAbsoAbund, ymax=meanAbsoAbund+sdAbsoAbund), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 1.5, y = field_cult_GS_absoAbund_CP$noInocNoShade, yend = field_cult_GS_absoAbund_CP$noInocNoShade), linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 1.5, y = field_cult_GS_absoAbund_CP$noInocShade, yend = field_cult_GS_absoAbund_CP$noInocShade))+ #no inoculum, shade
+  #geom_segment(aes(x = 0.5, xend = 1.5, y = , yend = ), linetype = "dotted")+ #calculated static community
+  geom_point(mapping = aes(color = shade), size = 3, position = position_dodge(0.5))+
+  geom_errorbar(mapping = aes(x = GS_all, ymin = meanAbsoAbund-sdAbsoAbund, ymax = meanAbsoAbund+sdAbsoAbund, color = shade), width = 0.05, position = position_dodge(0.5))+
+  scale_x_discrete()+
+  scale_color_manual(values = Fieldcolors, guide = "none")+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  facet_wrap(~factor(GS_all, levels = c("Microcoleus vaginatus", "Arizonema", "Scytonema", "Crustifilum", "Chroococcidiopsis")), scales = "free", ncol = 1)+
+  theme_classic()+
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title = element_text(size = 12, face = "bold"),
+        strip.text.x = element_text(size = 12, face = "italic"),
+        strip.background = element_blank())
+
+#ggsave("figures.v6/CPcyanoGS_absoAbund_dots_fieldcult.pdf", width = 3, height = 9)
+```
+
+# Field Cultivation Plot = MJ
+```{r}
+# Some subsetting for plotting
+intact_mean_GS_abso_abund_MJ_field <- intact_mean_GS_abso_abund %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")) %>%
+  filter(project %in% c("MJ"))
+
+fieldNoInoculum_mean_GS_abso_abund_MJ_noShade <- fieldNoInoculum_mean_GS_abso_abund %>%
+  filter(shade == "none") %>% 
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum"))
+
+fieldNoInoculum_mean_GS_abso_abund_MJ_Shade <- fieldNoInoculum_mean_GS_abso_abund %>%
+  filter(shade == "S") %>% 
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum"))
+
+field_cult_GS_absoAbund_MJ <- field_cult_GS_absoAbund %>%
+  filter(GS_all %in% c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")) %>%
+  filter(desert %in% c("MJ"))
+
+field_cult_GS_absoAbund_MJ$noInocNoShade <- rep(fieldNoInoculum_mean_GS_abso_abund_MJ_noShade$meanAbsoAbund, 2)
+
+field_cult_GS_absoAbund_MJ$noInocShade <- rep(fieldNoInoculum_mean_GS_abso_abund_MJ_Shade$meanAbsoAbund, 2)
+
+field_cult_GS_absoAbund_MJ$calcStatic <- rep(intact_mean_GS_abso_abund_MJ_field$fieldCalcStatic, 2)
+
+
+# PLOT
+field_cult_GS_absoAbund_MJ %>% 
+  ggplot(mapping = aes(x = GS_all, y = meanAbsoAbund), color = shade)+
+  geom_rect(data = intact_mean_GS_abso_abund_MJ_field, mapping = aes(xmin = 0.5, xmax = 2.5, ymin = meanAbsoAbund-sdAbsoAbund, ymax=meanAbsoAbund+sdAbsoAbund), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 2.5, y = field_cult_GS_absoAbund_MJ$noInocNoShade, yend = field_cult_GS_absoAbund_MJ$noInocNoShade), linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 2.5, y = field_cult_GS_absoAbund_MJ$noInocShade, yend = field_cult_GS_absoAbund_MJ$noInocShade))+ #no inoculum, shade
+  geom_segment(aes(x = 0.5, xend = 2.5, y = field_cult_GS_absoAbund_MJ$calcStatic, yend = field_cult_GS_absoAbund_MJ$calcStatic), linetype = "dotted")+ #calculated static community
+  geom_point(mapping = aes(color = shade), size = 3, position = position_dodge(0.5))+
+  geom_errorbar(mapping = aes(x = GS_all, ymin = meanAbsoAbund-sdAbsoAbund, ymax = meanAbsoAbund+sdAbsoAbund, color = shade), width = 0.05, position = position_dodge(0.5))+
+  scale_x_discrete()+
+  scale_color_manual(values=Fieldcolors, guide = "none")+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  facet_wrap(~factor(GS_all,levels = c("Microcoleus vaginatus", "Scytonema", "Schizothrix cf-calcicola", "Funiculus", "Parifilum")), scales = "free", ncol = 1)+
+  theme_classic()+
+  theme(axis.text = element_text(size = 12),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title = element_text(size = 12, face = "bold"),
+        strip.text.x = element_text(size = 12, face = "italic"),
+        strip.background = element_blank())
+
+#ggsave("figures.v6/MJcyanoGS_absoAbund_dots_fieldcult.pdf", width = 3, height = 9)
+```
+
+
+# Restoration
+```{r}
+# Use the background soils as the baseline, use the intact biocrust as the target, use the R0 data as the initial starting (so there will be two time points on this chart) and 4 conditions (GH, GHam, Field, Fieldam)
+
+bareSoil_mean_phyla_abso_abund %>% 
+  filter(Phylum %in% c("Cyanobacteria")) # mean = 0.441, sd = 0.701
+intact_mean_phyla_abso_abund %>%
+  filter(Phylum %in% c("Cyanobacteria")) # mean CP = 3.81, sd = 2.53
+# mean MJ = 5.8, sd = 2.37
+
+# calculate values for restoration (8 means)
+temp3 <- unique(cesu_psmelt %>% dplyr::select(Sample, priorShade, farmGreenhouse))
+
+phylaSubset_abund4 <- left_join(phylaSubset_abund3, temp3, by = "Sample")
+
+resto_phyla_absoAbund <- phylaSubset_abund4 %>%
+  filter(comboLabel %in% c("R0.g.CP.NA.NA.none.soil","R0.g.MJ.NA.NA.none.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R2.g.CP.NA.NA.none.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil")) %>%
+  group_by(Phylum, desert, project, priorShade, farmGreenhouse) %>% 
+  summarise(meanAbsoAbund = mean(abund),
+            sdAbsoAbund = sd(abund)) # missing f/g information and prior shade information
+
+# make a new label for plotting
+resto_phyla_absoAbund$farmGreenhouse_shade <- paste(resto_phyla_absoAbund$farmGreenhouse, resto_phyla_absoAbund$priorShade)
+
+resto_phyla_absoAbund$farmGreenhouse_shade <- factor(resto_phyla_absoAbund$farmGreenhouse_shade, levels = c("g none", "g S", "f none", "f S"))
+
+# Restoration Trials Plot = CP
+restoColors <- c("darkseagreen", "darkslategrey","darksalmon", "brown4")
+
+resto_phyla_absoAbund %>% 
+  filter(Phylum %in% c("Cyanobacteria")) %>%
+  filter(desert %in% c("CP")) %>%
+  ggplot(mapping = aes(x = farmGreenhouse_shade, y = meanAbsoAbund))+
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 4.5, ymin = 3.18-2.53, ymax=3.18+2.53), fill = "grey", alpha = 0.4)+
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 4.5, ymin = 0.441-0.701, ymax=0.441+0.701), fill = "grey90", alpha = 0.4)+ # bare soil, no inoculum 
+  #geom_segment(aes(x = 0.5, xend = 4.5, y = 0.138, yend = 0.138), linetype = "dashed")+ # bare soil, no inoculum 
+  geom_point(mapping = aes(color = farmGreenhouse_shade, shape = project, alpha = project), size = 3)+
+  geom_errorbar(mapping = aes(x = farmGreenhouse_shade, ymin = meanAbsoAbund-sdAbsoAbund, ymax = meanAbsoAbund+sdAbsoAbund, color = farmGreenhouse_shade, alpha = project), width = 0.05)+
+  scale_x_discrete(labels = c("g none" = "No Amelioration", "g S" = "Amelioration", "f none" = "No Amelioration", "f S" = "Amelioration"))+
+  scale_color_manual(values=restoColors, guide = "none")+
+  scale_alpha_discrete(range = c(0.5, 1), labels = c("R0" = "Start", "R2" = "End"))+
+  scale_shape_manual(values = c(1, 16), labels = c("R0" = "Start", "R2" = "End"))+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  theme_classic()+
+  guides(shape = guide_legend(title = "Restoration"),
+         alpha = guide_legend(title = "Restoration"))+
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 12, face = "bold"),
+        legend.position = "bottom")+
+  ylim(-0.5,10)
+
+#ggsave("figures.v6/CPrestocyano_absoAbund_dots.pdf", width = 6, height = 4)
+```
+
+
+# Restoration Trials = MJ
+```{r}
+resto_phyla_absoAbund %>% 
+  filter(Phylum %in% c("Cyanobacteria")) %>%
+  filter(desert %in% c("MJ")) %>%
+  ggplot(mapping = aes(x = farmGreenhouse_shade, y = meanAbsoAbund))+
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 4.5, ymin = 5.8-2.37, ymax=5.8+2.37), fill = "grey", alpha = 0.4)+
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 4.5, ymin = 0.441-0.7, ymax=0.441+0.7), fill = "grey90", alpha = 0.4)+ # bare soil, no inoculum 
+  #geom_segment(aes(x = 0.5, xend = 4.5, y = 0.138, yend = 0.138), linetype = "dashed")+ # bare soil, no inoculum 
+  geom_point(mapping = aes(color = farmGreenhouse_shade, shape = project, alpha = project), size = 3)+
+  geom_errorbar(mapping = aes(x = farmGreenhouse_shade, ymin = meanAbsoAbund-sdAbsoAbund, ymax = meanAbsoAbund+sdAbsoAbund, color = farmGreenhouse_shade, alpha = project), width = 0.05)+
+  scale_x_discrete(labels = c("g none" = "No Amelioration", "g S" = "Amelioration", "f none" = "No Amelioration", "f S" = "Amelioration"))+
+  scale_color_manual(values=restoColors, guide = "none")+
+  scale_alpha_discrete(range = c(0.5, 1), labels = c("R0" = "Start", "R2" = "End"))+
+  scale_shape_manual(values = c(1, 16), labels = c("R0" = "Start", "R2" = "End"))+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  theme_classic()+
+  guides(shape = guide_legend(title = "Restoration"),
+         alpha = guide_legend(title = "Restoration"))+
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 12, face = "bold"),
+        legend.title = element_text(size = 12, face = "bold"))+
+  #legend.position = "bottom")+
+  ylim(-0.5,10)
+
+#ggsave("figures.v6/MJrestocyano_absoAbund_dots.pdf", width = 7, height = 4)
+```

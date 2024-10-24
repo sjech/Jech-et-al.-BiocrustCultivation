@@ -1,0 +1,909 @@
+---
+title: "10.cyano_taxa_stacked_bars_figures"
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+library(FSA) # dunnTest for post-hoc
+```
+
+## Load Data
+```{r}
+cesu_16S_ps <- readRDS("data_output/mbcyano_processed_filt_ps.rds")
+cyanoassignments <- read.csv("data/cesucyanoassignments265.csv")
+cyanoassignments$GS <- paste(cyanoassignments$G_checked, cyanoassignments$S_checked)
+qPCR <- read.csv("data/cesuqPCR.csv")
+```
+
+# Get to know the data, create labels, delete extra samples and blanks
+```{r}
+cesu_16S_ps@sam_data@names #colnames for the sample_data information in this phyloseq object
+cesu_16S_ps@sam_data[["names"]] # view all samples
+
+# Create a combo label where sample types are maintained but the replicate is not included (project, farm or greenhouse, desert, water, substrate)
+cesu_16S_ps@sam_data$comboLabel <- paste(cesu_16S_ps@sam_data$project ,cesu_16S_ps@sam_data$farmGreenhouse, cesu_16S_ps@sam_data$desert, cesu_16S_ps@sam_data$water, cesu_16S_ps@sam_data$shade, cesu_16S_ps@sam_data$priorShade,cesu_16S_ps@sam_data$substrate, sep = ".")
+unique(cesu_16S_ps@sam_data$comboLabel)
+table(cesu_16S_ps@sam_data$comboLabel)
+
+#Setup. Delete P and WP substrates, delete water regime B
+# This means I can compare inocula growth in the greenhouse on no substrate, with and without shade (different shade types I think). I will only have timepoint 2 for mayberry farm. I have two timepoints for the greenhouse. I have control values at the greenhouse and farm at the end of cultivation. 
+
+# Subsetting by sample name (remove all sods & watering regime B & blanks):
+# now actually remove them in the ps object
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps, !water %in% c("B"))
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !substrate %in% c("P", "WP"))
+unique(cesu_16S_ps_subset@sam_data$comboLabel)
+table(cesu_16S_ps_subset@sam_data$comboLabel)
+# one of the blanks has an incorrect value for substrate and shade so it is separating out from the rest in the combolabels - fix it when you melt
+# Contruct other useful labels?
+# remove blanks for now
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !project %in% c("Blank"))
+
+# check it
+cesu_16S_ps_subset@sam_data[["comboLabel"]] # ok
+
+# the initials are still in there
+
+
+# Plot relative and absolute abundance of phylum-level groups across the entire project. Keep all samples without shade for now, but maybe remove later
+# factor the label levels for plotting
+cesu_16S_ps_subset@sam_data$comboLabel <- factor(cesu_16S_ps_subset@sam_data$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+cesu_16S_ps_subset@sam_data$desert <- factor(cesu_16S_ps_subset@sam_data$desert, levels = c("control", "C", "CP", "MJ"))
+
+
+# #### Plotting Phyla Relative Abundance ####
+# #Get count of reads by phyla
+# table(phyloseq::tax_table(cesu_16S_ps_subset)[, "Phylum"]) #40 Phyla included
+# # get the total read count per sample
+reads_per_sample <- as.data.frame (sample_sums(cesu_16S_ps_subset)) # they are all different because we did not rarefy in this dataset
+# #copy the rownames to a column
+reads_per_sample <- tibble::rownames_to_column(reads_per_sample, "Sample")
+# # change the name of the second column
+colnames(reads_per_sample) <- c("Sample", "totalReads")
+nrow(reads_per_sample) # 143 samples are included
+# 
+# # first melt the data out of phyloseq format and into long dataframe
+cesu_psmelt <- psmelt(cesu_16S_ps_subset) #this takes some time, patience!
+```
+
+
+## Genera Level
+need to correct the names of cyanobacteria genera/species with Cydrasil
+```{r}
+#head(cesu_psmelt)
+# add in the Cydrasil names
+cyanoassignments_GS <- cyanoassignments %>% dplyr::select("ASV","GS")
+cesupsmelt <- left_join(cesu_psmelt, cyanoassignments_GS, by = c("OTU" = "ASV")) 
+
+# text issues with the names 
+cesupsmelt$GS <- trimws(cesupsmelt$GS, which = c("right"))
+unique(cesupsmelt$GS) # 50 unique GS levels
+# fix some of the names 
+cesupsmelt$GS[cesupsmelt$GS == "Chroococidopsis"] <- "Chroococcidiopsis"
+# Deal with the names
+cesupsmelt$GS_all <- cesupsmelt$GS
+cesupsmelt$GS_all <- ifelse(is.na(cesupsmelt$GS_all), paste(cesupsmelt$Genus), cesupsmelt$GS_all)
+unique(cesupsmelt$GS_all) # 698 unique GS_all levels
+
+# merge dataframe with total reads in sample
+cesupsmelt_abund <- inner_join(cesupsmelt, reads_per_sample, by = "Sample")
+# divide the Abundance column by the total reads column
+cesupsmelt_abund$relAbund <- cesupsmelt_abund$Abundance / cesupsmelt_abund$totalReads
+```
+
+## Another Genus level plot but with absolute abundance
+```{r}
+# Merge with qPCR counts
+qPCR_subset <- qPCR %>% dplyr::select(SampleID, qPCR_16S_copies, mass_soil_extracted_for_DNA_g)
+cesupsmelt_abund <- inner_join(cesupsmelt_abund, qPCR_subset, by = c("Sample" = "SampleID"))
+# Calculate absolute abundance per gram soil and adjust the scientific notation
+cesupsmelt_abund$absoAbund <- (((cesupsmelt_abund$relAbund * cesupsmelt_abund$qPCR_16S_copies)) / cesupsmelt_abund$mass_soil_extracted_for_DNA_g) / (10^6)
+
+# In order to create a plot that displays genus-level absolute abundances for all treatments, I need to subset the dataframe for all the cyanos
+
+# Get a list of the most abundant Genera (ABSOLUTE ABUNDANCE) for Cyanos only
+temp <- cesupsmelt_abund %>%
+  filter(Phylum %in% c("Cyanobacteria")) %>%
+  group_by(GS_all) %>%
+  summarise(totalAbund = sum(absoAbund)) %>%
+  arrange(-totalAbund)
+
+temp <- temp %>% filter(!GS_all %in% c("sister clade to cyanobacteria", "not identified", NA, "NA","Gloeobacter","not a cyano (sister clade)"))
+
+# fix the Schizothrix spelling issue
+unique(cesupsmelt_abund$GS_all)
+cesupsmelt_abund$GS_all[which(cesupsmelt_abund$GS_all == "Schizothrix cf-calcicola")] <- "Schizothrix cf. calcicola"
+
+temp_list <- temp$GS_all
+temp_list <- temp_list[1:20]
+
+# I wonder how different the lists are for CP vs. MJ 
+temp_CP <- cesupsmelt_abund %>%
+  filter(comboLabel %in% c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil")) %>%
+  filter(Phylum %in% c("Cyanobacteria")) %>%
+  group_by(GS_all) %>%
+  summarise(totalAbund = sum(absoAbund)) %>%
+  arrange(-totalAbund)
+
+temp_CP <- temp_CP %>% filter(!GS_all %in% c("sister clade to cyanobacteria", "not identified", NA, "NA","Gloeobacter","not a cyano (sister clade)"))
+
+temp_CP_list <- temp_CP$GS_all
+temp_CP_list <- temp_CP_list[1:20]
+
+#setdiff(temp_list, temp_CP_list) # yes there are differences in the top 40
+#setdiff(temp_CP_list, temp_list) # yes there are differences in the top 40
+
+# Look at the reference biocrust and make a list of the most abundant genera and species which can be used to assess the cultivated inocula
+temp_MJ <- cesupsmelt_abund %>%
+  filter(comboLabel %in% c("MJ.NA.initial.NA.none.NA.soil")) %>%
+  filter(Phylum %in% c("Cyanobacteria")) %>%
+  group_by(GS_all) %>%
+  summarise(totalAbund = sum(absoAbund)) %>%
+  arrange(-totalAbund)
+
+temp_MJ <- temp_MJ %>% filter(!GS_all %in% c("sister clade to cyanobacteria", "not identified", NA, "NA","Gloeobacter","not a cyano (sister clade)"))
+
+temp_MJ_list <- temp_MJ$GS_all
+temp_MJ_list <- temp_MJ_list[1:20]
+
+sort(temp_list) == sort(temp_CP_list) # they are different
+sort(temp_list) == sort(temp_MJ_list) # they are different
+sort(temp_CP_list) == sort(temp_MJ_list) # they are different
+temp_CP_list
+temp_MJ_list
+# 
+
+# calculations
+sum(temp_CP$totalAbund)
+# 18.56
+sum(temp_CP$totalAbund[1:19])
+# 18.46
+18.46/18.56 # is 99.5% of the abundance in intact biocrusts
+sum(temp_MJ$totalAbund)
+# 16.3
+sum(temp_MJ$totalAbund[1:19])
+# 16.1
+16.1/16.3 # is 99% of the abundance in intact biocrusts
+
+# delete one from each list
+temp_CP_list <- temp_CP_list[1:19]
+temp_MJ_list <- temp_MJ_list[1:19]
+```
+
+# Colorado Plateau
+```{r}
+#subset the psmelt dataframe for only the TopGenera
+CPgenusSubset <- cesupsmelt_abund %>%
+  filter(GS_all %in% temp_CP_list)
+
+# check that we got the right ones
+sort(unique(CPgenusSubset$GS_all)) == sort(temp_CP_list) # yes!
+
+#subset the psmelt dataframe for only the TopGenera
+MJgenusSubset <- cesupsmelt_abund %>%
+  filter(GS_all %in% temp_MJ_list)
+
+# check that we got the right ones
+sort(unique(MJgenusSubset$GS_all)) == sort(temp_MJ_list) # yes!
+
+# calculate the absolute abundance per Genus, grouped by Sample
+CP_genera_AbsoAbund_summary <- CPgenusSubset %>%
+  group_by(Sample) %>%
+  summarise(TotalAbsoAbund = sum(absoAbund))
+
+CP_genera_AbsoAbund_summary$Sample # make sure the reference crusts are in there...yes!
+
+# call up the total absolute abundances to compare 
+CP_genera_groups_totalAbund <- cesupsmelt_abund %>% 
+  filter(Phylum %in% c("Cyanobacteria")) %>%
+  group_by(Sample) %>% 
+  summarise(sum = sum(absoAbund))
+
+CP_genera_groups_totalAbund %>% arrange(desc(sum))
+CP_genera_AbsoAbund_summary %>% arrange(desc(TotalAbsoAbund))
+
+# They are close, but not exactly the same because we removed some GS so now we create the other category as the difference 
+CP_genera_AbsoAbund_summary <- inner_join(CP_genera_AbsoAbund_summary, CP_genera_groups_totalAbund, by = "Sample")
+
+# add a new column which contains the absolute abundance value for the Other category
+CP_genera_AbsoAbund_summary$other <- (CP_genera_AbsoAbund_summary$sum - CP_genera_AbsoAbund_summary$TotalAbsoAbund)
+# delete the sum column and the total absoabund column
+CP_genera_AbsoAbund_summary <- CP_genera_AbsoAbund_summary %>%
+  dplyr::select(Sample, other)
+#add column which is "Other" repeated
+CP_genera_AbsoAbund_summary$GS_all <- "Other"
+#change column header "other" to absoAbund
+colnames(CP_genera_AbsoAbund_summary)[which(names(CP_genera_AbsoAbund_summary) == "other")] <- "absoAbund"
+
+# make a dataframe that I will use to make the composition bar plots
+CP_top20genera_AbsoAbund_summary <- CPgenusSubset %>%
+  group_by(Sample,GS_all) %>%
+  summarise(absoAbund = sum(absoAbund)) # in this case, absoAbund is a sum of all the ASVs with that taxonomic classification
+
+# rbind the "Other" values to the dataframe
+CPgroups4 <- rbind(CP_top20genera_AbsoAbund_summary, CP_genera_AbsoAbund_summary)
+
+# Now check that they sum to the total absolute abundance expected per sample
+CPgroups4 %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(absoAbund))
+# call up the totals to compare 
+CP_genera_groups_totalAbund ## YES they match
+
+# add in the grouping variables so that you can plot them  
+label_list <- cesupsmelt %>% 
+  dplyr::select(comboLabel, Sample, project, desert, shade, priorShade, farmGreenhouse) # maybe add more variables here for faceting properly
+label_list <- distinct(label_list) # remove the duplicates
+CPgroups4 <- left_join(CPgroups4, label_list, by = "Sample")
+unique(CPgroups4$project)
+
+# Average all together (plot will not show every replicate)
+# fix an issue with the controls
+CPgroups4$comboLabel2 <- CPgroups4$comboLabel
+unique(CPgroups4$comboLabel2)
+CPgroups4$comboLabel2[which(CPgroups4$comboLabel2 == "CP.NA.initial.NA.none.none.soil")] <- "CP.NA.initial.NA.none.NA.soil"
+unique(CPgroups4$comboLabel2) # looks better, only 1 CP reference present
+# the two CP reference crusts have different values for priorShade 
+
+# calculate the averages
+CPgroups4_aggregate <- CPgroups4 %>% 
+  group_by(project, desert, shade, farmGreenhouse, comboLabel2, GS_all) %>%
+  summarise(meanabsoAbund = mean(absoAbund),
+            sdabsoAbund = sd(absoAbund))
+
+
+# Stacked Bar Plot
+temp_CP_list # this is the correct order 
+rev(temp_CP_list) # this is the correct order in reverse
+
+CPgroups4_aggregate$GS_all <- factor(CPgroups4_aggregate$GS_all, levels = c("Other", "Undefined Chroococcidiopsidales", "Trichocoleus desertorum", "Wilmottia", "Aliterella", "Crinalium epipsammum", "Nostoc", "Funiculus", "Schizothrix cf. calcicola", "Stenomitos frigidus", "Pycnacronema brasiliensis", "Undefined Nostocales", "Tolypothrix", "Allocoleopsis", "Chroococcidiopsis", "Crustifilum",  "Scytonema", "Arizonema", "Undefined Coleofasciculaceae", "Microcoleus vaginatus"))
+
+twenty_colors <- c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C","#FDBF6F", "#FF7F00", "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928","dodgerblue2","yellow4", "orange","steelblue4","darkturquoise", "black", "gold1","grey30")
+
+# CPgroups4_aggregate %>%
+#   ggplot(aes(y = meanabsoAbund, x = comboLabel2, fill = GS_all)) +
+#   geom_bar(stat = "identity", alpha = 0.8, width = 0.85) +
+#   geom_col(color = "black", linewidth = 0.25)+
+#   scale_fill_manual(values = twenty_colors, breaks=c("Microcoleus vaginatus", "Undefined Coleofasciculaceae", "Arizonema", "Scytonema", "Crustifilum",  "Chroococcidiopsis", "Allocoleopsis", "Tolypothrix", "Undefined Nostocales", "Pycnacronema brasiliensis", "Stenomitos frigidus", "Schizothrix cf. calcicola", "Funiculus", "Nostoc", "Crinalium epipsammum", "Aliterella", "Wilmottia", "Trichocoleus desertorum", "Undefined Chroococcidiopsidales", "Other"))+
+#   #scale_y_continuous(expand = c(0, 0.01), breaks=seq(0, 1, .2)) +
+#   #scale_x_discrete(labels = IS_labels)+
+#   theme_classic()+
+#   coord_flip()+
+#   #facet_grid(rows = vars(comboLabel2), scales = "free", space = "free", switch = "y")+ ##labeller = labeller(comboLabel = new_labels
+#   labs(x = "", y = "Relative Abundance", fill = "")+
+#   theme(axis.text = element_text(size = 12),
+#         #axis.text.y = element_blank(),
+#         #axis.ticks.y = element_blank(),
+#         axis.title = element_text(size = 12),
+#         #strip.background = element_rect(fill="white", colour=NA),
+#         #strip.background = element_blank(),
+#         #strip.text = element_blank(),
+#         #strip.text = element_text(face="bold", size=12),
+#         #strip.text.y.left = element_text(angle = 0),
+#         #legend.title = element_text(face = "bold"),
+#         legend.position = "bottom",
+#         legend.text = element_text(size = 10, face = "italic"),
+#         plot.margin = margin(0.5,1,0,0, "cm"))+
+#   guides(fill = guide_legend(nrow = 5, byrow = TRUE))                           
+# do not save this rough plot - it is a starter 
+
+# CP ONLY
+CPgroups4_aggregate$comboLabel2 <- factor(CPgroups4_aggregate$comboLabel2, levels = c("CP.NA.initial.NA.none.NA.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil","GH0.NA.MJ.3.none.NA.greenhouseSoil",  "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N","MB2.NA.C.A.S.NA.JC", "MB2.NA.C.A.none.NA.N", "R0.f.CP.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil","R0.g.CP.NA.NA.S.soil", "R0.g.CP.NA.NA.none.soil","R0.f.MJ.NA.NA.S.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil","R0.g.MJ.NA.NA.none.soil","R0.control.control.NA.NA.none.soil","R2.f.CP.NA.NA.S.soil","R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil","R2.g.CP.NA.NA.none.soil","R2.f.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.none.soil","R2.g.MJ.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.control.control.NA.NA.none.soil"))
+
+
+new_labels_CP <- c("CP.NA.initial.NA.none.NA.soil" = "Reference biocrust",
+                   "GH0.NA.CP.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH0.NA.CP.3.S.NA.greenhouseSoil" = "Shade",
+                   "GH1.NA.control.3.none.NA.greenhouseSoil" = "No inoculum, no shade",
+                   "GH1.NA.control.3.S.NA.greenhouseSoil" = "No inoculum, shade",
+                   "GH1.NA.CP.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH1.NA.CP.3.S.NA.greenhouseSoil" = "Shade",
+                   "MB2.NA.C.A.none.NA.N" = "No inoculum, no shade",
+                   "MB2.NA.C.A.S.NA.JC" = "No inoculum, shade",
+                   "MB2.NA.CP.A.none.NA.N" = "No shade",
+                   "MB2.NA.CP.A.S.NA.JC" = "Shade",
+                   "R0.g.CP.NA.NA.none.soil" = "Greenhouse cultivated, no shade",
+                   "R0.g.CP.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R0.f.CP.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R0.f.CP.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R0.control.control.NA.NA.none.soil" = "No inoculum",
+                   "R2.g.CP.NA.NA.none.soil" = "Greenhouse cultivated, no shade",
+                   "R2.f.CP.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R2.g.CP.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R2.f.CP.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R2.control.control.NA.NA.none.soil" = "No inoculum")
+
+unique(CPgroups4_aggregate$project)
+CPproject_labels <- c("CP" = "Reference\nbiocrust","GH0" = "Greenhouse\ncultivation\ninitial", "GH1" = "Greenhouse\ncultivation\nend point","MB2" = "Field\ncultivation\nend point", "R0" = "Restoration\ninitial", "R2"= "Restoration\nend point")
+
+CPgroups4_aggregate %>%
+  #filter(desert %in% c("CP","C","control")) %>%
+  filter(!desert %in% c("MJ")) %>%
+  filter(!comboLabel2 %in% c("MJ.NA.initial.NA.none.NA.soil")) %>%
+  ggplot(aes(y = meanabsoAbund, x = comboLabel2, fill = GS_all)) +
+  geom_bar(stat = "identity", alpha = 0.8, width = 0.85) +
+  geom_col(color = "black", linewidth = 0.25)+
+  scale_fill_manual(values = twenty_colors, breaks=c("Microcoleus vaginatus", "Undefined Coleofasciculaceae", "Arizonema", "Scytonema", "Crustifilum",  "Chroococcidiopsis", "Allocoleopsis", "Tolypothrix", "Undefined Nostocales", "Pycnacronema brasiliensis", "Stenomitos frigidus", "Schizothrix cf. calcicola", "Funiculus", "Nostoc", "Crinalium epipsammum", "Aliterella", "Wilmottia", "Trichocoleus desertorum", "Undefined Chroococcidiopsidales", "Other"))+
+  #scale_y_continuous(expand = c(0, 0.01), breaks=seq(0, 1, .2)) +
+  scale_x_discrete(labels = new_labels_CP)+
+  theme_classic()+
+  coord_flip()+
+  facet_grid(rows = vars(project), scales = "free", space = "free", labeller = labeller(project = CPproject_labels))+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  theme(axis.text = element_text(size = 12),
+        #axis.text.y = element_blank(),
+        #axis.ticks.y = element_blank(),
+        axis.title = element_text(size = 12),
+        strip.background = element_rect(fill="white", colour=NA),
+        #strip.background = element_blank(),
+        #strip.text = element_blank(),
+        strip.text = element_text(face="bold", size=12),
+        strip.text.y.right = element_text(angle = 0),
+        legend.title = element_blank(),
+        legend.position = "bottom",
+        legend.text = element_text(size = 10, face = "italic"),
+        plot.margin = margin(0.5,1,0,0, "cm"))+
+  guides(fill = guide_legend(nrow = 4, byrow = TRUE))+
+  ylim(0,4)
+
+#ggsave("figures/CP_cyanoGSall_absoAbund_stackedbar.pdf", width = 11, height = 9)
+```
+
+
+# MJ ONLY
+```{r}
+#subset the psmelt dataframe for only the TopGenera
+MJgenusSubset <- cesupsmelt_abund %>%
+  filter(GS_all %in% temp_MJ_list)
+
+# check that we got the right ones
+sort(unique(MJgenusSubset$GS_all)) == sort(temp_MJ_list) # yes!
+
+# calculate the absolute abundance per Genus, grouped by Sample
+MJ_genera_AbsoAbund_summary <- MJgenusSubset %>%
+  group_by(Sample) %>%
+  summarise(TotalAbsoAbund = sum(absoAbund))
+
+MJ_genera_AbsoAbund_summary$Sample # make sure the reference crusts are in there...yes!
+
+# call up the total absolute abundances to compare 
+MJ_genera_groups_totalAbund <- cesupsmelt_abund %>% 
+  filter(Phylum %in% c("Cyanobacteria")) %>%
+  group_by(Sample) %>% 
+  summarise(sum = sum(absoAbund))
+
+MJ_genera_groups_totalAbund %>% arrange(desc(sum))
+MJ_genera_AbsoAbund_summary %>% arrange(desc(TotalAbsoAbund))
+
+# They are close, but not exactly the same because we removed some GS so now we create the other category as the difference 
+MJ_genera_AbsoAbund_summary <- inner_join(MJ_genera_AbsoAbund_summary, MJ_genera_groups_totalAbund, by = "Sample")
+
+# add a new column which contains the absolute abundance value for the Other category
+MJ_genera_AbsoAbund_summary$other <- (MJ_genera_AbsoAbund_summary$sum - MJ_genera_AbsoAbund_summary$TotalAbsoAbund)
+# delete the sum column and the total absoabund column
+MJ_genera_AbsoAbund_summary <- MJ_genera_AbsoAbund_summary %>%
+  dplyr::select(Sample, other)
+#add column which is "Other" repeated
+MJ_genera_AbsoAbund_summary$GS_all <- "Other"
+#change column header "other" to absoAbund
+colnames(MJ_genera_AbsoAbund_summary)[which(names(MJ_genera_AbsoAbund_summary) == "other")] <- "absoAbund"
+
+# make a dataframe that I will use to make the composition bar plots
+MJ_top20genera_AbsoAbund_summary <- MJgenusSubset %>%
+  group_by(Sample,GS_all) %>%
+  summarise(absoAbund = sum(absoAbund)) # in this case, absoAbund is a sum of all the ASVs with that taxonomic classification
+
+# rbind the "Other" values to the dataframe
+MJgroups4 <- rbind(MJ_top20genera_AbsoAbund_summary, MJ_genera_AbsoAbund_summary)
+
+# Now check that they sum to the total absolute abundance expected per sample
+MJgroups4 %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(absoAbund))
+# call up the totals to compare 
+MJ_genera_groups_totalAbund ## YES they match
+
+# add in the grouping variables so that you can plot them  
+#label_list <- cesupsmelt %>% 
+#  dplyr::select(comboLabel, Sample, project, desert, shade, priorShade, farmGreenhouse) # maybe add more variables here for faceting properly
+#label_list <- distinct(label_list) # remove the duplicates
+MJgroups4 <- left_join(MJgroups4, label_list, by = "Sample")
+unique(MJgroups4$project)
+
+# Average all together (plot will not show every replicate)
+# first calculate the averages
+MJgroups4$comboLabel2 <- MJgroups4$comboLabel
+unique(MJgroups4$comboLabel2)
+
+MJgroups4_aggregate <- MJgroups4 %>% 
+  group_by(project, desert, shade, farmGreenhouse, comboLabel2, GS_all) %>%
+  summarise(meanabsoAbund = mean(absoAbund),
+            sdabsoAbund = sd(absoAbund))
+
+
+# Stacked Bar Plot
+temp_MJ_list # this is the correct order 
+rev(temp_MJ_list) # this is the correct order in reverse
+
+MJgroups4_aggregate$GS_all <- factor(MJgroups4_aggregate$GS_all, levels = c("Other", "Trichocoleus desertorum", "Lyngbya", "Myxacorys californica", "Tolypothrix", "Leptolyngbya", "Pycnacronema", "Potamolinea", "Undefined Oscillatoriales", "Chroococcidiopsis", "Arizonema", "Microcoleus paludosus", "Allocoleopsis", "Pycnacronema brasiliensis", "Parifilum", "Funiculus", "Schizothrix cf. calcicola", "Scytonema", "Undefined Coleofasciculaceae", "Microcoleus vaginatus"))
+
+#unique(groups4_aggregate$comboLabel2)
+new_labels_MJ <- c("MJ.NA.initial.NA.none.NA.soil" = "Reference biocrust",
+                   "GH0.NA.MJ.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH0.NA.MJ.3.S.NA.greenhouseSoil" = "Shade",
+                   "GH1.NA.MJ.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH1.NA.MJ.3.S.NA.greenhouseSoil" = "Shade",
+                   "GH1.NA.control.3.none.NA.greenhouseSoil" = "No inoculum, no shade",
+                   "GH1.NA.control.3.S.NA.greenhouseSoil" = "No inoculum, shade",
+                   "MB2.NA.MJ.A.none.NA.N" = "No shade",
+                   "MB2.NA.MJ.A.S.NA.JC" = "Shade",
+                   "MB2.NA.C.A.none.NA.N" = "No inoculum, no shade",
+                   "MB2.NA.C.A.S.NA.JC" = "No inoculum, shade",
+                   "R0.g.MJ.NA.NA.none.soil"= "Greenhouse cultivated, no shade",
+                   "R0.f.MJ.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R0.g.MJ.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R0.f.MJ.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R0.control.control.NA.NA.none.soil" = "No inoculum",
+                   "R2.g.MJ.NA.NA.none.soil" = "Greenhouse cultivated, no shade",
+                   "R2.f.MJ.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R2.g.MJ.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R2.f.MJ.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R2.control.control.NA.NA.none.soil" = "No inoculum"
+)
+
+unique(MJgroups4_aggregate$project)
+levels(MJgroups4_aggregate$project)
+MJgroups4_aggregate$project <- factor(MJgroups4_aggregate$project, levels = c("CP","MJ","GH0","GH1","MB2","R0","R2"))
+MJproject_labels2 <- c("MJ" = "Reference\nbiocrust","GH0" = "Greenhouse\ncultivation\ninitial", "GH1" = "Greenhouse\ncultivation\nend point","MB2" = "Field\ncultivation\nend point", "R0" = "Restoration\ninitial", "R2"= "Restoration\nend point")
+
+MJgroups4_aggregate %>%
+  filter(!desert %in% c("CP")) %>%
+  filter(!comboLabel2 %in% c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil")) %>%
+  ggplot(aes(y = meanabsoAbund, x = comboLabel2, fill = GS_all)) +
+  geom_bar(stat = "identity", alpha = 0.8, width = 0.85) +
+  geom_col(color = "black", linewidth = 0.25)+
+  scale_fill_manual(values = twenty_colors, breaks=c("Microcoleus vaginatus", "Undefined Coleofasciculaceae", "Scytonema", "Schizothrix cf. calcicola", "Funiculus", "Parifilum", "Pycnacronema brasiliensis", "Allocoleopsis", "Microcoleus paludosus", "Arizonema", "Chroococcidiopsis", "Undefined Oscillatoriales", "Potamolinea", "Pycnacronema", "Leptolyngbya", "Tolypothrix", "Myxacorys californica", "Lyngbya", "Trichocoleus desertorum", "Other"))+
+  #scale_y_continuous(expand = c(0, 0.01), breaks=seq(0, 1, .2)) +
+  scale_x_discrete(labels = new_labels_MJ)+
+  theme_classic()+
+  coord_flip()+
+  facet_grid(rows = vars(project), scales = "free", space = "free", labeller = labeller(project = MJproject_labels2))+
+  labs(x = "", y = expression(paste("No. 16S rRNA gene copies \u00D7 ", 10^6, " \u00D7 ", g^-1))) +
+  theme(axis.text = element_text(size = 12),
+        #axis.text.y = element_blank(),
+        #axis.ticks.y = element_blank(),
+        axis.title = element_text(size = 12),
+        strip.background = element_rect(fill="white", colour=NA),
+        #strip.background = element_blank(),
+        #strip.text = element_blank(),
+        strip.text = element_text(size=12, face = "bold"),
+        strip.text.y.right = element_text(angle = 0),
+        #legend.title = element_text(face = "bold", size = 12),
+        legend.position = "bottom",
+        legend.text = element_text(size = 10, face = "italic"),
+        legend.title = element_blank(),
+        plot.margin = margin(0.5,1,0,0, "cm"))+
+  guides(fill = guide_legend(nrow = 4, byrow = TRUE))                           
+
+#ggsave("figures/MJ_cyanoGSall_absoAbund_stackedbar.pdf", width = 11, height = 9)
+```
+
+
+# Reformat the table for the manuscript table 
+```{r}
+CPgroups4_aggregate$meanabsoAbund_ <- round(CPgroups4_aggregate$meanabsoAbund, 3)
+CPgroups4_aggregate$sdabsoAbund_ <- round(CPgroups4_aggregate$sdabsoAbund, 3)
+
+CPTable <- CPgroups4_aggregate %>% filter(GS_all %in% temp_CP_list[1:9])
+CPTable <- CPTable %>% select(comboLabel2, GS_all, meanabsoAbund_, sdabsoAbund_)
+
+MJgroups4_aggregate$meanabsoAbund_ <- round(MJgroups4_aggregate$meanabsoAbund, 3)
+MJgroups4_aggregate$sdabsoAbund_ <- round(MJgroups4_aggregate$sdabsoAbund, 3)
+
+MJTable <- MJgroups4_aggregate %>% filter(GS_all %in% temp_MJ_list[1:9])
+MJTable <- MJTable %>% select(comboLabel2, GS_all, meanabsoAbund_, sdabsoAbund_)
+```
+
+## Statistical Analysis 
+```{r}
+# Colorado Plateau
+CPdf <- CPgroups4 %>%
+  filter(!desert %in% c("MJ")) %>%
+  filter(!comboLabel2 %in% c("MJ.NA.initial.NA.none.NA.soil"))
+
+# Cultivation #
+CPdf_cult <- CPdf %>%
+  filter(comboLabel2 %in% c("MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "CP.NA.initial.NA.none.NA.soil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil"))
+
+# The CP we need to include on the table are:
+temp_CP_list[1:10] # ] "Microcoleus vaginatus", "Undefined Coleofasciculaceae", "Arizonema", "Scytonema", "Crustifilum",  "Chroococcidiopsis", "Allocoleopsis", "Tolypothrix", "Undefined Nostocales", "Pycnacronema brasiliensis" 
+
+
+# Microcoleus vaginatus
+CP_cult_Mvag <- CPdf_cult %>%
+filter(GS_all %in% c("Microcoleus vaginatus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_Mvag)
+# Kruskal-Wallis chi-squared = 13.866, df = 4, p-value = 0.007737
+dunnTest(absoAbund ~ comboLabel2, data = CP_cult_Mvag, method = "holm")
+# 8              GH1.NA.CP.3.none.NA.greenhouseSoil - MB2.NA.CP.A.S.NA.JC -2.9401137 0.003280918 0.03280918
+
+# Arizonema
+CP_cult_Ariz <- CPdf_cult %>%
+  filter(GS_all %in% c("Arizonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_Ariz)
+# Kruskal-Wallis chi-squared = 10.083, df = 4, p-value = 0.03906
+dunnTest(absoAbund ~ comboLabel2, data = CP_cult_Ariz, method = "holm")
+# 10                          MB2.NA.CP.A.none.NA.N - MB2.NA.CP.A.S.NA.JC -3.07958942 0.002072861 0.02072861
+
+# Scytonema
+CP_cult_Scy <- CPdf_cult %>%
+  filter(GS_all %in% c("Scytonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_Scy)
+# Kruskal-Wallis chi-squared = 13.243, df = 4, p-value = 0.01015
+dunnTest(absoAbund ~ comboLabel2, data = CP_cult_Scy, method = "holm")
+# no significant comparisons 
+
+# Crustifilum
+CP_cult_Crusti <- CPdf_cult %>%
+  filter(GS_all %in% c("Crustifilum"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_Crusti)
+# Kruskal-Wallis chi-squared = 8.7984, df = 4, p-value = 0.06634
+#dunnTest(absoAbund ~ comboLabel2, data = CP_cult_Crusti, method = "holm")
+# 
+
+# Chroococcidiopsis
+CP_cult_Chroo <- CPdf_cult %>%
+  filter(GS_all %in% c("Chroococcidiopsis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_Chroo)
+# Kruskal-Wallis chi-squared = 8.9912, df = 4, p-value = 0.06132
+#dunnTest(absoAbund ~ comboLabel2, data = CP_cult_Chroo, method = "holm")
+# 
+
+# Allocoleopsis
+CP_cult_Alloc <- CPdf_cult %>%
+  filter(GS_all %in% c("Allocoleopsis"))
+
+# Restoration #
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_Alloc)
+# Kruskal-Wallis chi-squared = 6.9555, df = 4, p-value = 0.1383
+#dunnTest(absoAbund ~ comboLabel2, data = CP_cult_Alloc, method = "holm")
+# 
+
+# Tolypothrix
+CP_cult_Toly <- CPdf_cult %>%
+  filter(GS_all %in% c("Tolypothrix"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_Toly)
+# Kruskal-Wallis chi-squared = 15.2, df = 4, p-value = 0.004303
+dunnTest(absoAbund ~ comboLabel2, data = CP_cult_Toly, method = "holm")
+# 5            GH1.NA.CP.3.none.NA.greenhouseSoil - MB2.NA.CP.A.none.NA.N  3.1069641 0.001890194 0.01890194
+# 6               GH1.NA.CP.3.S.NA.greenhouseSoil - MB2.NA.CP.A.none.NA.N  2.8889315 0.003865533 0.03478979
+
+# Pycnacronema brasiliensis
+CP_cult_PycBras <- CPdf_cult %>%
+  filter(GS_all %in% c("Pycnacronema brasiliensis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_cult_PycBras)
+# Kruskal-Wallis chi-squared = 7.7871, df = 4, p-value = 0.0997
+#dunnTest(absoAbund ~ comboLabel2, data = CP_cult_PycBras, method = "holm")
+# 
+```
+
+# Restoration #
+```{r}
+CPdf$comboLabel2[which(CPdf$comboLabel2 == "R0.control.control.NA.NA.none.soil")] <- "R2.control.control.NA.NA.none.soil"
+# unique(CPdf$comboLabel2) # looks good
+
+CPdf_resto <- CPdf %>%
+  filter(comboLabel2 %in% c("R0.g.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.f.CP.NA.NA.S.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+# The CP we need to include on the table are:
+# "Microcoleus vaginatus", "Undefined Coleofasciculaceae", "Arizonema", "Scytonema", "Crustifilum",  "Chroococcidiopsis", "Allocoleopsis", "Tolypothrix", "Undefined Nostocales", "Pycnacronema brasiliensis" 
+
+
+# Microcoleus vaginatus
+CP_resto_Mvag <- CPdf_resto %>%
+  filter(GS_all %in% c("Microcoleus vaginatus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_Mvag)
+# Kruskal-Wallis chi-squared = 16.189, df = 8, p-value = 0.03975
+dunnTest(absoAbund ~ comboLabel2, data = CP_resto_Mvag, method = "holm")
+# 30                  R0.f.CP.NA.NA.S.soil - R2.g.CP.NA.NA.S.soil  3.2359923 0.001212206 0.04363943
+
+# Arizonema
+CP_resto_Ariz <- CPdf_resto %>%
+  filter(GS_all %in% c("Arizonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_Ariz)
+# Kruskal-Wallis chi-squared = 8.4737, df = 8, p-value = 0.3886
+#dunnTest(absoAbund ~ comboLabel2, data = CP_resto_Ariz, method = "holm")
+# 
+
+# Scytonema
+CP_resto_Scy <- CPdf_resto %>%
+  filter(GS_all %in% c("Scytonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_Scy)
+# Kruskal-Wallis chi-squared = 24.573, df = 8, p-value = 0.001836
+dunnTest(absoAbund ~ comboLabel2, data = CP_resto_Scy, method = "holm")
+# 26 R2.control.control.NA.NA.none.soil - R2.g.CP.NA.NA.none.soil -3.32216242 0.0008932268 0.03126294
+
+# Crustifilum
+CP_resto_Crusti <- CPdf_resto %>%
+  filter(GS_all %in% c("Crustifilum"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_Crusti)
+# Kruskal-Wallis chi-squared = 13.045, df = 8, p-value = 0.1103
+#dunnTest(absoAbund ~ comboLabel2, data = CP_resto_Crusti, method = "holm")
+# 
+
+# Chroococcidiopsis
+CP_resto_Chroo <- CPdf_resto %>%
+  filter(GS_all %in% c("Chroococcidiopsis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_Chroo)
+# Kruskal-Wallis chi-squared = 9.053, df = 8, p-value = 0.3378
+# dunnTest(absoAbund ~ comboLabel2, data = CP_resto_Chroo, method = "holm")
+# 
+
+# Allocoleopsis
+CP_resto_Alloc <- CPdf_resto %>%
+  filter(GS_all %in% c("Allocoleopsis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_Alloc)
+# Kruskal-Wallis chi-squared = 14.046, df = 8, p-value = 0.08057
+#dunnTest(absoAbund ~ comboLabel2, data = CP_resto_Alloc, method = "holm")
+# 
+
+# Tolypothrix
+CP_resto_Toly <- CPdf_resto %>%
+  filter(GS_all %in% c("Tolypothrix"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_Toly)
+# Kruskal-Wallis chi-squared = 24.793, df = 8, p-value = 0.001685
+dunnTest(absoAbund ~ comboLabel2, data = CP_resto_Toly, method = "holm")
+# 9  R0.g.CP.NA.NA.none.soil - R2.control.control.NA.NA.none.soil  3.4307399 0.0006019375 0.02166975
+
+# Pycnacronema brasiliensis
+CP_resto_PycBras <- CPdf_resto %>%
+  filter(GS_all %in% c("Pycnacronema brasiliensis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = CP_resto_PycBras)
+# Kruskal-Wallis chi-squared = 14.191, df = 8, p-value = 0.07693
+#dunnTest(absoAbund ~ comboLabel2, data = CP_resto_PycBras, method = "holm")
+# 
+```
+
+
+## Mojave 
+```{r}
+MJdf <- MJgroups4 %>%
+  filter(!desert %in% c("CP")) %>%
+  filter(!comboLabel2 %in% c("CP.NA.initial.NA.none.NA.soil","CP.NA.initial.NA.none.none.soil"))
+
+# Cultivation #
+MJdf_cult <- MJdf %>%
+  filter(comboLabel2 %in% c("MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "MJ.NA.initial.NA.none.NA.soil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil"))
+
+unique(MJdf_cult$comboLabel2)
+
+# The MJ we need to include on the table are:
+temp_MJ_list[1:10] # ] "Microcoleus vaginatus", "Undefined Coleofasciculaceae", "Scytonema", "Schizothrix cf. calcicola", "Funiculus", "Parifilum", "Pycnacronema brasiliensis", "Allocoleopsis", "Microcoleus paludosus", "Arizonema"
+
+
+# Microcoleus vaginatus
+MJ_cult_Mvag <- MJdf_cult %>%
+  filter(GS_all %in% c("Microcoleus vaginatus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_Mvag)
+# Kruskal-Wallis chi-squared = 13.945, df = 4, p-value = 0.007474
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_Mvag, method = "holm")
+# 9                 MB2.NA.MJ.A.none.NA.N - MJ.NA.initial.NA.none.NA.soil -3.1022669 0.001920447 0.01920447
+# 6                           MB2.NA.MJ.A.none.NA.N - MB2.NA.MJ.A.S.NA.JC -3.0157481 0.002563461 0.02307115
+
+
+# Scytonema
+MJ_cult_Scy <- MJdf_cult %>%
+  filter(GS_all %in% c("Scytonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_Scy)
+# Kruskal-Wallis chi-squared = 12.967, df = 4, p-value = 0.01144
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_Scy, method = "holm")
+# 2            GH1.NA.MJ.3.none.NA.greenhouseSoil - MB2.NA.MJ.A.none.NA.N  2.8913604 0.00383578 0.03835780
+# 3               GH1.NA.MJ.3.S.NA.greenhouseSoil - MB2.NA.MJ.A.none.NA.N  2.8913604 0.00383578 0.03452202
+
+# Schizothrix cf. calcicola
+MJ_cult_Schiz <- MJdf_cult %>%
+  filter(GS_all %in% c("Schizothrix cf. calcicola"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_Schiz)
+# Kruskal-Wallis chi-squared = 10.825, df = 4, p-value = 0.0286
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_Schiz, method = "holm")
+# 9                 MB2.NA.MJ.A.none.NA.N - MJ.NA.initial.NA.none.NA.soil -3.0688773 0.002148648 0.02148648
+
+# Funiculus
+MJ_cult_Funi <- MJdf_cult %>%
+  filter(GS_all %in% c("Funiculus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_Funi)
+# Kruskal-Wallis chi-squared = 13.68, df = 4, p-value = 0.008388
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_Funi, method = "holm")
+# 9                 MB2.NA.MJ.A.none.NA.N - MJ.NA.initial.NA.none.NA.soil -3.4527867 0.0005548276 0.005548276
+
+# Parifilum
+MJ_cult_Pari <- MJdf_cult %>%
+  filter(GS_all %in% c("Parifilum"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_Pari)
+# Kruskal-Wallis chi-squared = 13.582, df = 4, p-value = 0.008755
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_Pari, method = "holm")
+# 2            GH1.NA.MJ.3.none.NA.greenhouseSoil - MB2.NA.MJ.A.none.NA.N  2.9028518 0.003697816 0.03697816
+# 9                 MB2.NA.MJ.A.none.NA.N - MJ.NA.initial.NA.none.NA.soil -2.8433167 0.004464668 0.04018201
+
+# Pycnacronema brasiliensis
+MJ_cult_PycBras <- MJdf_cult %>%
+  filter(GS_all %in% c("Pycnacronema brasiliensis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_PycBras)
+# Kruskal-Wallis chi-squared = 13.831, df = 4, p-value = 0.007856
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_PycBras, method = "holm")
+# 9                 MB2.NA.MJ.A.none.NA.N - MJ.NA.initial.NA.none.NA.soil -3.1036285 0.001911632 0.01911632
+# 6                           MB2.NA.MJ.A.none.NA.N - MB2.NA.MJ.A.S.NA.JC -3.0170717 0.002552294 0.02297065
+
+# Allocoleopsis
+MJ_cult_Alloc <- MJdf_cult %>%
+  filter(GS_all %in% c("Allocoleopsis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_Alloc)
+# Kruskal-Wallis chi-squared = 9.7157, df = 4, p-value = 0.0455
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_Alloc, method = "holm")
+# 9                 MB2.NA.MJ.A.none.NA.N - MJ.NA.initial.NA.none.NA.soil -2.9523377 0.003153778 0.03153778
+
+# Microcoleus paludosus
+MJ_cult_MPal <- MJdf_cult %>%
+  filter(GS_all %in% c("Microcoleus paludosus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_MPal)
+# Kruskal-Wallis chi-squared = 13.845, df = 4, p-value = 0.007806
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_MPal, method = "holm")
+# 9                 MB2.NA.MJ.A.none.NA.N - MJ.NA.initial.NA.none.NA.soil -3.2328122 0.001225781 0.01225781
+# 3               GH1.NA.MJ.3.S.NA.greenhouseSoil - MB2.NA.MJ.A.none.NA.N  2.9659573 0.003017424 0.02715681
+
+# Arizonema
+MJ_cult_Ariz <- MJdf_cult %>%
+  filter(GS_all %in% c("Arizonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_cult_Ariz)
+# Kruskal-Wallis chi-squared = 9.7606, df = 4, p-value = 0.04466
+dunnTest(absoAbund ~ comboLabel2, data = MJ_cult_Ariz, method = "holm")
+# 
+```
+
+# MJ Restoration #
+```{r}
+MJdf$comboLabel2[which(MJdf$comboLabel2 == "R0.control.control.NA.NA.none.soil")] <- "R2.control.control.NA.NA.none.soil"
+# unique(MJdf$comboLabel2) # looks good
+
+MJdf_resto <- MJdf %>%
+  filter(comboLabel2 %in% c("R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+# The MJ we need to include on the table are:
+# "Microcoleus vaginatus", "Undefined Coleofasciculaceae", "Scytonema", "Schizothrix cf. calcicola", "Funiculus", "Parifilum", "Pycnacronema brasiliensis", "Allocoleopsis", "Microcoleus paludosus", "Arizonema"
+
+
+# Microcoleus vaginatus
+MJ_resto_Mvag <- MJdf_resto %>%
+  filter(GS_all %in% c("Microcoleus vaginatus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Mvag)
+# Kruskal-Wallis chi-squared = 16.938, df = 8, p-value = 0.03076
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Mvag, method = "holm")
+# no significant comparisons
+
+# Scytonema
+MJ_resto_Scy <- MJdf_resto %>%
+  filter(GS_all %in% c("Scytonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Scy)
+# Kruskal-Wallis chi-squared = 23.795, df = 8, p-value = 0.002481
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Scy, method = "holm")
+# 26 R2.control.control.NA.NA.none.soil - R2.g.MJ.NA.NA.none.soil -3.2479293 1.162482e-03 0.040686856
+# 10    R0.g.MJ.NA.NA.S.soil - R2.control.control.NA.NA.none.soil  3.9617599 7.439934e-05 0.002678376
+
+# Schizothrix cf. calcicola
+MJ_resto_Schiz <- MJdf_resto %>%
+  filter(GS_all %in% c("Schizothrix cf. calcicola"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Schiz)
+# Kruskal-Wallis chi-squared = 16.489, df = 8, p-value = 0.03589
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Schiz, method = "holm")
+# no significant comparisons 
+
+# Funiculus
+MJ_resto_Funi <- MJdf_resto %>%
+  filter(GS_all %in% c("Funiculus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Funi)
+# Kruskal-Wallis chi-squared = 25.801, df = 8, p-value = 0.001136
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Funi, method = "holm")
+# 8     R0.f.MJ.NA.NA.S.soil - R2.control.control.NA.NA.none.soil  3.9170496 8.963932e-05 0.003227016
+
+# Parifilum
+MJ_resto_Pari <- MJdf_resto %>%
+  filter(GS_all %in% c("Parifilum"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Pari)
+# Kruskal-Wallis chi-squared = 24.496, df = 8, p-value = 0.001891
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Pari, method = "holm")
+# no significant comparisons
+
+# Pycnacronema brasiliensis
+MJ_resto_PycBras <- MJdf_resto %>%
+  filter(GS_all %in% c("Pycnacronema brasiliensis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_PycBras)
+# Kruskal-Wallis chi-squared = 19.166, df = 8, p-value = 0.014
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_PycBras, method = "holm")
+# 8     R0.f.MJ.NA.NA.S.soil - R2.control.control.NA.NA.none.soil  3.57531822 0.0003498022 0.01259288
+
+# Allocoleopsis
+MJ_resto_Alloc <- MJdf_resto %>%
+  filter(GS_all %in% c("Allocoleopsis"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Alloc)
+# Kruskal-Wallis chi-squared = 24.306, df = 8, p-value = 0.002036
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Alloc, method = "holm")
+# 8     R0.f.MJ.NA.NA.S.soil - R2.control.control.NA.NA.none.soil  3.70951351 0.0002076579 0.007475684
+
+# Microcoleus paludosus
+MJ_resto_Mpal <- MJdf_resto %>%
+  filter(GS_all %in% c("Microcoleus paludosus"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Mpal)
+# Kruskal-Wallis chi-squared = 16.23, df = 8, p-value = 0.0392
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Mpal, method = "holm")
+# no significant comparisons
+
+# Arizonema
+MJ_resto_Ariz <- MJdf_resto %>%
+  filter(GS_all %in% c("Arizonema"))
+
+kruskal.test(absoAbund ~ comboLabel2, data = MJ_resto_Ariz)
+# Kruskal-Wallis chi-squared = 21.564, df = 8, p-value = 0.005791
+dunnTest(absoAbund ~ comboLabel2, data = MJ_resto_Ariz, method = "holm")
+# no significant comparisons
+
+# get aggregated values for the controls
+controls <- CPgroups4
+controls$comboLabel2[which(controls$comboLabel2 == "R0.control.control.NA.NA.none.soil")] <- "R2.control.control.NA.NA.none.soil"
+
+controls_aggregate <- controls %>%
+  group_by(comboLabel2, GS_all) %>%
+  summarise(meanabsoAbund = mean(absoAbund),
+            sdabsoAbund = sd(absoAbund))
+  
+```

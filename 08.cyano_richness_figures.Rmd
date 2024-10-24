@@ -1,0 +1,472 @@
+---
+title: "08.cyano_richness_figures"
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+-  Calculate richness at the cyano taxa level, create figures, and run statistical analyses
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+```
+
+## Load Data
+```{r}
+cesu_16S_ps <- readRDS("data_output/mbcyano_processed_filt_ps.rds")
+cyanoassignments <- read.csv("data/cesucyanoassignments265.csv")
+cyanoassignments$GS <- paste(cyanoassignments$G_checked, cyanoassignments$S_checked)
+```
+
+# Get to know the data, create labels, delete extra samples and blanks
+```{r}
+# Create a combo label where sample types are maintained but the replicate is not included (project, farm or greenhouse, desert, water, substrate)
+cesu_16S_ps@sam_data$comboLabel <- paste(cesu_16S_ps@sam_data$project ,cesu_16S_ps@sam_data$farmGreenhouse, cesu_16S_ps@sam_data$desert, cesu_16S_ps@sam_data$water, cesu_16S_ps@sam_data$shade, cesu_16S_ps@sam_data$priorShade,cesu_16S_ps@sam_data$substrate, sep = ".")
+unique(cesu_16S_ps@sam_data$comboLabel)
+table(cesu_16S_ps@sam_data$comboLabel)
+
+#Setup. Delete P and WP substrates, delete water regime B
+# This means I can compare inocula growth in the greenhouse on no substrate, with and without shade (different shade types I think). I will only have timepoint 2 for mayberry farm. I have two timepoints for the greenhouse. I have control values at the greenhouse and farm at the end of cultivation. 
+
+# Subsetting by sample name (remove all sods & watering regime B & blanks):
+# now actually remove them in the ps object
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps, !water %in% c("B"))
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !substrate %in% c("P", "WP"))
+unique(cesu_16S_ps_subset@sam_data$comboLabel)
+table(cesu_16S_ps_subset@sam_data$comboLabel)
+# one of the blanks has an incorrect value for substrate and shade so it is separating out from the rest in the combolabels - fix it when you melt
+
+# factor the label levels for plotting
+cesu_16S_ps_subset@sam_data$comboLabel <- factor(cesu_16S_ps_subset@sam_data$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+cesu_16S_ps_subset@sam_data$desert <- factor(cesu_16S_ps_subset@sam_data$desert, levels = c("control", "C", "CP", "MJ"))
+```
+
+## Richness 
+Rarefy at samples to the same level
+```{r}
+# first remove the blanks
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !project %in% c("Blank"))
+# some calculations for rarefying
+min(sample_sums(cesu_16S_ps_subset)) #4610 is the minimum
+max(sample_sums(cesu_16S_ps_subset)) #47282 is the maximum, so rarefying to 90% of 47282, I would lose quite a lot of data
+0.9*47282 # 42553
+
+samplesumsdf <- as.matrix(sample_sums(cesu_16S_ps_subset))
+samplesumsdf <- as.data.frame(samplesumsdf)
+samplesumsdf$samples <- rownames(samplesumsdf)
+samplesumsdf <- arrange(samplesumsdf, -V1)
+samplesumsdf %>% ggplot()+
+  geom_point(mapping = aes(x = V1, y = reorder(samples,V1)))
+
+samplesumsdf %>% filter(V1 <= 10000) %>%
+  ggplot()+
+  geom_point(mapping = aes(x = V1, y = reorder(samples,V1)))
+# by rarefying to 10,000 we lose two samples 
+
+# Instead, I can keep consistent with the abundance cutoff I used when assigning GS names. Impose an abundance filter and include only the taxa that have an Abundance > 0.1% (raw reads = 50) in any sample 
+cesu_16S_ps_subset_filt = filter_taxa(cesu_16S_ps_subset, function(x) max(x) >= 50, TRUE)
+taxa_sums(cesu_16S_ps_subset)
+taxa_sums(cesu_16S_ps_subset_filt)
+min(taxa_sums(cesu_16S_ps_subset)) # 0
+min(taxa_sums(cesu_16S_ps_subset_filt)) # 50
+max(taxa_sums(cesu_16S_ps_subset)) #254441
+max(taxa_sums(cesu_16S_ps_subset_filt)) #254441
+mean(taxa_sums(cesu_16S_ps_subset)) #246.34
+mean(taxa_sums(cesu_16S_ps_subset_filt)) #2136.6
+
+min(sample_sums(cesu_16S_ps_subset_filt)) # 4112 is the minimum
+max(sample_sums(cesu_16S_ps_subset_filt)) # 42813 is the maxiumum
+0.1*42813  #if rarefied to 10% of the max = 4281
+0.9*4112 # if rarefied to 90% of the minimum, the level would be 3700
+
+samplesumsdf %>% 
+  ggplot()+
+  geom_point(mapping = aes(x = V1, y = reorder(samples,V1)))+
+  geom_vline(mapping = aes(xintercept = 10000))
+# at this level, we do not lose any samples, but we lose too much data. I would rather rarefy to 10,000 and lose samples rather than rarefy to this level 
+
+set.seed(1223)
+cesu_16S_ps.rarefied <- rarefy_even_depth(cesu_16S_ps_subset_filt, sample.size = 9000, replace = FALSE)
+# 6 samples removed because they contained fewer reads than sample.size
+# 10 OTUs were removed because they are no longer present in any sample after random subsampling.
+sample_sums(cesu_16S_ps.rarefied) # they are all at 10,000
+# check if any have fewer than 3 replicates
+table(cesu_16S_ps.rarefied@sam_data$comboLabel)
+# MB2.NA.C.B.none.NA.N has 2 replicates at a rarefaction level of 10,000 and 9,500 so I settled on 9000 reads
+```
+
+## Calculations
+```{r}
+# melt out of the phyloseq object 
+rare_psmelt <- psmelt(cesu_16S_ps.rarefied)
+
+# add in the Cydrasil names
+cyanoassignments_GS <- cyanoassignments %>% dplyr::select("ASV","GS")
+rarepsmelt <- left_join(rare_psmelt, cyanoassignments_GS, by = c("OTU" = "ASV")) 
+
+# text issues with the names 
+rarepsmelt$GS <- trimws(rarepsmelt$GS, which = c("right"))
+unique(rarepsmelt$GS) # 46 unique GS levels
+# fix some of the names 
+rarepsmelt$GS[rarepsmelt$GS == "Chroococidopsis"] <- "Chroococcidiopsis"
+# Deal with the names
+rarepsmelt$GS_all <- rarepsmelt$GS
+rarepsmelt$GS_all <- ifelse(is.na(rarepsmelt$GS_all), paste(rarepsmelt$Genus), rarepsmelt$GS_all)
+unique(rarepsmelt$GS_all) # 281 unique GS_all levels
+
+# Keep only the cyanobacteria
+rarepsmelt_cyano <- rarepsmelt %>% filter(Phylum == "Cyanobacteria") # 24,282 rows of data 
+
+# think about how to calculate observed richness (count all ASVs or al GS_all)
+min(rarepsmelt_cyano$Abundance) # there are samples with zero abundance which means we need to get rid of these values...
+
+rarepsmelt_cyano_nozero <- rarepsmelt_cyano %>% filter(Abundance > 0) # this is a presence/absence filter which you have to do in order to use the summarise function to calculate richness. Now the count is at 2995 (WAY FEWER)
+
+# ASV counts
+cyano_ASVcount <- rarepsmelt_cyano_nozero %>%
+  filter(!GS_all %in% c("sister clade to cyanobacteria", "not identified", NA)) %>%
+  group_by(Sample, GS_all, project, desert, farmGreenhouse, shade, priorShade, comboLabel) %>%
+  summarise(ASV_count = n(),
+            abundance = mean(Abundance)) # I don't see any zeros in this table. I think the values in n are the number of ASVs that went into that GS designation
+
+# get count of GS per sample
+cyano_GScount <- cyano_ASVcount %>%
+  filter(!is.na(GS_all)) %>%
+  group_by(Sample, project, desert, farmGreenhouse, shade, priorShade, comboLabel) %>%
+  summarise(GS_count = n(),
+            ASV_count = sum(ASV_count))
+# this should be richness!
+```
+
+# Aggregate to calculate mean and sd at the comboLabel level
+```{r}
+cyanoDiversityIndices <- cyano_GScount %>%
+  group_by(comboLabel, project, desert, farmGreenhouse, shade, priorShade) %>%
+  summarise(meanRichness_GS = mean(GS_count),
+            sdRichness_GS = sd(GS_count),
+            seRichness_GS = se(GS_count),
+            meanRichness_ASV = mean(ASV_count),
+            sdRichness_ASV = sd(ASV_count),
+            seRichness_ASV = se(ASV_count))
+
+
+# Statistical comparison of richness across sample types
+unique(cyano_GScount$comboLabel)
+# Cultivation
+cult_cyano_GScount <- cyano_GScount %>% filter(comboLabel %in% c("GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil","MB2.NA.CP.A.none.NA.N", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.C.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.C.A.S.NA.JC", "CP.NA.initial.NA.none.NA.soil","CP.NA.initial.NA.none.none.soil", "CP.NA.initial.NA.none.none.soil","MJ.NA.initial.NA.none.NA.soil"))
+
+# new label for the comparison
+cult_cyano_GScount$prjdesshade <- paste(cult_cyano_GScount$project, cult_cyano_GScount$desert, cult_cyano_GScount$shade)
+unique(cult_cyano_GScount$prjdesshade)
+
+CP_cult_cyano_GScount <- cult_cyano_GScount %>% filter(!desert %in% c("MJ")) %>% filter(!project %in% c("MJ"))
+unique(CP_cult_cyano_GScount$prjdesshade)
+MJ_cult_cyano_GScount <- cult_cyano_GScount %>% filter(!desert %in% c("CP")) %>% filter(!project %in% c("CP"))
+unique(MJ_cult_cyano_GScount$prjdesshade)
+```
+
+# CP Cultivation
+```{r}
+kruskal.test(GS_count ~ prjdesshade, data = CP_cult_cyano_GScount)
+# Kruskal-Wallis chi-squared = 30.211, df = 8, p-value = 0.0001939
+dunnTest(GS_count ~ prjdesshade, data = CP_cult_cyano_GScount, method = "holm")
+#14           GH1 CP none - MB2 C none  3.6973760 0.0002178395 0.007842224
+#15              GH1 CP S - MB2 C none  3.6138427 0.0003016921 0.010559225
+#19              GH1 CP none - MB2 C S  3.4007069 0.0006721184 0.022852027
+#20                 GH1 CP S - MB2 C S  3.2934034 0.0009898233 0.032664170
+# greenhouse inocula had higher richness than field controls
+
+# confidence interval
+#l.model <- lm(GS_count ~ prjdesshade, data = CP_cult_cyano_GScount)
+#confint(l.model, level=0.95)
+```
+
+# MJ Cultivation
+```{r}
+kruskal.test(GS_count ~ prjdesshade, data = MJ_cult_cyano_GScount)
+# Kruskal-Wallis chi-squared = 28.674, df = 8, p-value = 0.0003617
+dunnTest(GS_count ~ prjdesshade, data = MJ_cult_cyano_GScount, method = "holm")
+# 13              GH1 MJ none - MB2 C S  3.53396782 0.0004093709 0.014327982
+# 9            GH1 MJ none - MB2 C none  3.85523762 0.0001156173 0.004162222
+# 10              GH1 MJ S - MB2 C none  3.43947670 0.0005828399 0.019816558
+# greenhouse inocula had higher richness than field controls
+
+# confidence interval
+#l.model <- lm(GS_count ~ prjdesshade, data = MJ_cult_cyano_GScount)
+#confint(l.model, level=0.95)
+```
+
+# Restoration
+```{r}
+restoration_cyano_GScount <- cyano_GScount %>% filter(comboLabel %in% c("R0.g.CP.NA.NA.none.soil","R0.g.MJ.NA.NA.none.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R2.g.CP.NA.NA.none.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.control.control.NA.NA.none.soil","CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil","MJ.NA.initial.NA.none.NA.soil"))
+
+# new label for the comparison
+restoration_cyano_GScount$prjdesshade <- paste(restoration_cyano_GScount$project, restoration_cyano_GScount$desert, restoration_cyano_GScount$farmGreenhouse, restoration_cyano_GScount$priorShade)
+unique(restoration_cyano_GScount$prjdesshade)
+
+restoration_cyano_GScount$prjdesshade[18:21] <- "control"
+restoration_cyano_GScount$prjdesshade[54:57] <- "control"
+unique(restoration_cyano_GScount$prjdesshade)
+restoration_cyano_GScount$prjdesshade[75:77] <- "CP NA NA NA"
+unique(restoration_cyano_GScount$prjdesshade)
+
+CP_restoration_cyano_GScount <- restoration_cyano_GScount %>% filter(!desert %in% c("MJ")) %>% filter(!project %in% c("MJ"))
+MJ_restoration_cyano_GScount <- restoration_cyano_GScount %>% filter(!desert %in% c("CP")) %>% filter(!project %in% c("CP"))
+
+# CP Restoration
+kruskal.test(GS_count ~ prjdesshade, data = CP_restoration_cyano_GScount)
+# Kruskal-Wallis chi-squared = 31.204, df = 9, p-value = 0.0002731
+dunnTest(GS_count ~ prjdesshade, data = CP_restoration_cyano_GScount, method = "holm")
+#1        control - CP NA NA NA -3.95662839 7.601504e-05 0.003420677
+#29      control - R2 CP g none -3.41255881 6.435604e-04 0.028316657
+
+# confidence interval
+#l.model <- lm(GS_count ~ prjdesshade, data = CP_restoration_cyano_GScount)
+#confint(l.model, level=0.95)
+
+
+# MJ Restoration
+kruskal.test(GS_count ~ prjdesshade, data = MJ_restoration_cyano_GScount)
+# Kruskal-Wallis chi-squared = 33.423, df = 9, p-value = 0.0001127
+dunnTest(GS_count ~ prjdesshade, data = MJ_restoration_cyano_GScount, method = "holm")
+#1        control - MJ NA NA NA -4.01490076 5.947081e-05 0.002676187
+#29      control - R2 MJ g none -3.50074539 4.639589e-04 0.020414191
+#11         control - R0 MJ g S -3.41895227 6.286275e-04 0.026402356
+#4          control - R0 MJ f S -3.48438677 4.932661e-04 0.021210444
+
+# confidence interval
+#l.model <- lm(GS_count ~ prjdesshade, data = MJ_restoration_cyano_GScount)
+#confint(l.model, level=0.95)
+```
+
+
+## Means, SD, and conidence intervals for all treatments and controls ###
+```{r}
+# labels 
+cyano_GScount2 <- cyano_GScount
+unique(cyano_GScount2$comboLabel)
+cyano_GScount2$comboLabel[which(cyano_GScount2$comboLabel == "CP.NA.initial.NA.none.NA.soil")] <- "CP.NA.initial.NA.none.none.soil"
+unique(cyano_GScount2$comboLabel)
+cyano_GScount2$comboLabel[which(cyano_GScount2$comboLabel == "R0.control.control.NA.NA.none.soil")] <- "R2.control.control.NA.NA.none.soil"
+unique(cyano_GScount2$comboLabel)
+
+unique(cyano_GScount2$project)
+
+cyanoDiversityIndices2 <- cyano_GScount2 %>%
+  filter(!project %in% c("MB1", "GH0", "R0")) %>%
+  group_by(comboLabel, project, desert, farmGreenhouse, shade) %>%
+  summarise(meanRichness_GS = round(mean(GS_count),0),
+            sdRichness_GS = round(sd(GS_count),0),
+            meanRichness_ASV = round(mean(ASV_count),0),
+            sdRichness_ASV = round(sd(ASV_count),0))
+```
+
+## Plot Richness
+```{r}
+# get values for controls and reference crusts for plotting
+cult_cyano_GScount_controls_summary <- cult_cyano_GScount %>% 
+  filter(prjdesshade %in% c("CP initial none", "GH1 control S", "GH1 control none", "MB2 C S", "MB2 C none","MJ initial none")) %>%
+  group_by(prjdesshade) %>% 
+  summarise(meanGS = mean(GS_count),
+            sdGS = sd(GS_count))
+
+# get values for shaded and unshaded (both deserts) greenhouse cultivation
+gh_cult_cyano_richness <- cyano_GScount %>%
+  filter(comboLabel %in% c("GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil")) %>%
+  group_by(project, desert, shade) %>% 
+  summarise(meanGScount = mean(GS_count),
+            sdGScount = sd(GS_count)) 
+```
+# Boxplots Greenhouse
+```{r}
+GHcolors <- c("darkseagreen", "darkslategrey")
+
+# CP Greenhouse Cultivation
+gh_cult_cyano_richness %>% 
+  filter(desert %in% c("CP")) %>%
+  ggplot(mapping = aes(x = shade, y = meanGScount)) +
+  geom_point(mapping = aes(color = shade), size = 3)+
+  geom_errorbar(mapping = aes(x = shade, ymin = meanGScount+sdGScount, ymax = meanGScount-sdGScount, color = shade), width = 0.05)+
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 2.5, ymin = 11.2-2.22, ymax=11.2+2.22), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 5, yend = 5),linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 9.3, yend = 9.3))+ #no inoculum, shade
+  scale_color_manual(values = GHcolors, guide = "none")+
+  scale_x_discrete(labels = c("none" = "", "S" = ""))+
+  labs(x = "", y = "Cyanobacteria Richness") +
+  theme_classic()+
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(size = 11, face = "bold"),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  ylim(0,30)
+
+#ggsave("figures/CPcyano_richness_GHcult.pdf", width = 3, height = 3)
+```
+
+
+# Boxplots MJ Greenhouse Cultivation
+```{r}
+gh_cult_cyano_richness %>% 
+  filter(desert %in% c("MJ")) %>%
+  ggplot(mapping = aes(x = shade, y = meanGScount)) +
+  geom_point(mapping = aes(color = shade), size = 3)+
+  geom_errorbar(mapping = aes(x = shade, ymin = meanGScount+sdGScount, ymax = meanGScount-sdGScount, color = shade), width = 0.05)+
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 2.5, ymin = 22.3-0.58, ymax=22.3+0.58), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 5, yend = 5),linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 9.3, yend = 9.3))+ #no inoculum, shade
+  scale_color_manual(values = GHcolors, guide = "none")+
+  scale_x_discrete(labels = c("none" = "", "S" = ""))+
+  labs(x = "", y = "Cyanobacteria Richness") +
+  theme_classic()+
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(size = 11, face = "bold"),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  ylim(0,30)
+
+#ggsave("figures/MJcyano_richness_GHcult.pdf", width = 3, height = 3)
+```
+
+# Field Cultivation
+```{r}
+Fieldcolors <- c("darksalmon", "brown4")
+
+# get values for shaded and unshaded (both deserts) field cultivation (MB2)
+field_cult_cyano_richness <- cyano_GScount %>%
+  filter(comboLabel %in% c("MB2.NA.CP.A.none.NA.N", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "MB2.NA.CP.A.S.NA.JC")) %>%
+  group_by(project, desert, shade) %>% 
+  summarise(meanGScount = mean(GS_count),
+            sdGScount = sd(GS_count))  
+
+# CP Field Cultivation
+field_cult_cyano_richness %>% 
+  filter(desert %in% c("CP")) %>%
+  ggplot(mapping = aes(x = shade, y = meanGScount)) +
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 2.5, ymin = 11.3-2.25, ymax=11.3+2.25), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 1.75, yend = 1.75),linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 2.5, yend = 2.5))+ #no inoculum, shade
+  geom_point(mapping = aes(color = shade), size = 3)+
+  geom_errorbar(mapping = aes(x = shade, ymin = meanGScount+sdGScount, ymax = meanGScount-sdGScount, color = shade), width = 0.05)+
+  scale_color_manual(values = Fieldcolors, guide = "none")+
+  scale_x_discrete(labels = c("none" = "", "S" = ""))+
+  labs(x = "", y = "Cyanobacteria Richness") +
+  theme_classic()+
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(size = 11, face = "bold"),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  ylim(0,30)
+
+#ggsave("figures/CPcyano_richness_fieldcult.pdf", width = 3, height = 3)
+```
+
+# MJ Field Cultivation
+```{r}
+field_cult_cyano_richness %>% 
+  filter(desert %in% c("MJ")) %>%
+  ggplot(mapping = aes(x = shade, y = meanGScount)) +
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 2.5, ymin = 22.3-0.58, ymax=22.3+0.58), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 1.75, yend = 1.75),linetype = "dashed")+ #no inoculum, no shade
+  geom_segment(aes(x = 0.5, xend = 2.5, y = 2.5, yend = 2.5))+ #no inoculum, shade
+  geom_point(mapping = aes(color = shade), size = 3)+
+  geom_errorbar(mapping = aes(x = shade, ymin = meanGScount+sdGScount, ymax = meanGScount-sdGScount, color = shade), width = 0.05)+
+  scale_color_manual(values = Fieldcolors, guide = "none")+
+  scale_x_discrete(labels = c("none" = "", "S" = ""))+
+  labs(x = "", y = "Cyanobacteria Richness") +
+  theme_classic()+
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(size = 11, face = "bold"),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  ylim(0,30)
+
+#ggsave("figures/MJcyano_richness_fieldcult.pdf", width = 3, height = 3)
+```
+
+## Restoration
+```{r}
+restoColors <- c("darkseagreen", "darkslategrey","darksalmon", "brown4")
+
+resto_cyano_richness <- cyano_GScount %>%
+  filter(comboLabel %in% c("R0.g.CP.NA.NA.none.soil","R0.g.MJ.NA.NA.none.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R2.g.CP.NA.NA.none.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil")) %>%
+  group_by(desert, project, priorShade, farmGreenhouse) %>% 
+  summarise(meanGScount = mean(GS_count),
+            sdGScount = sd(GS_count)) 
+
+# make a new label for plotting
+resto_cyano_richness$farmGreenhouse_shade <- paste(resto_cyano_richness$farmGreenhouse, resto_cyano_richness$priorShade)
+
+resto_cyano_richness$farmGreenhouse_shade <- factor(resto_cyano_richness$farmGreenhouse_shade, levels = c("g none", "g S", "f none", "f S"))
+
+# get values for controls and reference crusts for plotting
+resto_cyano_GScount_controls_summary <- restoration_cyano_GScount %>% 
+  filter(prjdesshade %in% c("control")) %>%
+  group_by(prjdesshade) %>% 
+  summarise(meanGS = mean(GS_count),
+            sdGS = sd(GS_count))
+
+# CP
+resto_cyano_richness %>% 
+  filter(desert %in% c("CP")) %>%
+  ggplot(mapping = aes(x = farmGreenhouse_shade, y = meanGScount)) +
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 4.5, ymin = 11.3-2.25, ymax=11.3+2.25), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 4.5, y = 1.3, yend = 1.3),linetype = "dashed")+ #no inoculum
+  geom_point(mapping = aes(color = farmGreenhouse_shade, alpha = project, shape = project), size = 3)+
+  geom_errorbar(mapping = aes(x = farmGreenhouse_shade, ymin = meanGScount+sdGScount, ymax = meanGScount-sdGScount, color = farmGreenhouse_shade, alpha = project), width = 0.05)+
+  scale_x_discrete(labels = c("g none" = "", "g S" = "", "f none" = "", "f S" = ""))+
+  scale_color_manual(values = restoColors, guide = "none")+
+  scale_alpha_discrete(range = c(0.5, 1), labels = c("R0" = "Start", "R2" = "End"))+
+  scale_shape_manual(values = c(1,16), labels = c("R0" = "Start", "R2" = "End"))+
+  labs(x = "", y = "Cyanobacteria Richness") +
+  theme_classic()+
+  guides(shape = guide_legend(title = "Restoration"),
+         alpha = guide_legend(title = "Restoration"))+
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(size = 11, face = "bold"),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom")+
+  ylim(0,30)
+ 
+#ggsave("figures/CPcyano_richness_restoration.pdf", width = 8, height = 5)
+```
+
+# MJ
+```{r}
+resto_cyano_richness %>% 
+  filter(desert %in% c("MJ")) %>%
+  ggplot(mapping = aes(x = farmGreenhouse_shade, y = meanGScount)) +
+  geom_rect(mapping = aes(xmin = 0.5, xmax = 4.5, ymin = 22.3-0.58, ymax=22.3+0.58), fill = "grey", alpha = 0.4)+
+  geom_segment(aes(x = 0.5, xend = 4.5, y = 1.3, yend = 1.3),linetype = "dashed")+ #no inoculum
+  geom_point(mapping = aes(color = farmGreenhouse_shade, alpha = project, shape = project), size = 3)+
+  geom_errorbar(mapping = aes(x = farmGreenhouse_shade, ymin = meanGScount+sdGScount, ymax = meanGScount-sdGScount, color = farmGreenhouse_shade, alpha = project), width = 0.05)+
+  scale_x_discrete(labels = c("g none" = "", "g S" = "", "f none" = "", "f S" = ""))+
+  scale_color_manual(values = restoColors, guide = "none")+
+  scale_alpha_discrete(range = c(0.5, 1), labels = c("R0" = "Start", "R2" = "End"))+
+  scale_shape_manual(values = c(1,16), labels = c("R0" = "Start", "R2" = "End"))+
+  labs(x = "", y = "Cyanobacteria Richness") +
+  theme_classic()+
+  guides(shape = guide_legend(title = "Restoration"),
+         alpha = guide_legend(title = "Restoration"))+
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(size = 11, face = "bold"),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom")+
+  ylim(0,30)
+
+#ggsave("figures/MJcyano_richness_restoration.pdf", width = 8, height = 5)
+```

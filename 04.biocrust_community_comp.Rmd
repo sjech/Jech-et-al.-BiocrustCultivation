@@ -1,0 +1,432 @@
+---
+title: '04.biocrust_community_comp'
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+-  Create stacked bar plots at the genus and species level for CP and MJ communities during cultivation and restoration. You can find the same code to make a figure for the intact communities and bare soils in 03.biocrust_IntactBare_community_comp.Rmd
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+library(car) # For Levene Test and anova
+library(FSA) # dunnTest for post-hoc
+```
+
+## Load Data
+```{r}
+cesu_16S_ps <- readRDS("data_output/mbcyano_processed_filt_ps.rds")
+cyanoassignments <- read.csv("data/cesucyanoassignments265.csv")
+cyanoassignments$GS <- paste(cyanoassignments$G_checked, cyanoassignments$S_checked)
+qPCR <- read.csv("data/cesuqPCR.csv")
+```
+
+# Get to know the data, create labels, delete extra samples and blanks
+```{r}
+cesu_16S_ps@sam_data@names #colnames for the sample_data information in this phyloseq object
+cesu_16S_ps@sam_data[["names"]] # view all samples
+
+# Create a combo label where sample types are maintained but the replicate is not included (project, farm or greenhouse, desert, water, substrate)
+cesu_16S_ps@sam_data$comboLabel <- paste(cesu_16S_ps@sam_data$project ,cesu_16S_ps@sam_data$farmGreenhouse, cesu_16S_ps@sam_data$desert, cesu_16S_ps@sam_data$water, cesu_16S_ps@sam_data$shade, cesu_16S_ps@sam_data$priorShade,cesu_16S_ps@sam_data$substrate, sep = ".")
+unique(cesu_16S_ps@sam_data$comboLabel)
+table(cesu_16S_ps@sam_data$comboLabel)
+
+#Setup. Delete P and WP substrates, delete water regime B
+# This means I can compare inocula growth in the greenhouse on no substrate, with and without shade (different shade types I think). I will only have timepoint 2 for mayberry farm. I have two timepoints for the greenhouse. I have control values at the greenhouse and farm at the end of cultivation. 
+
+# Subsetting by sample name (remove all sods & watering regime B & blanks):
+# now actually remove them in the ps object
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps, !water %in% c("B"))
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !substrate %in% c("P", "WP"))
+unique(cesu_16S_ps_subset@sam_data$comboLabel)
+table(cesu_16S_ps_subset@sam_data$comboLabel)
+# one of the blanks has an incorrect value for substrate and shade so it is separating out from the rest in the combolabels - fix it when you melt
+# Contruct other useful labels?
+# remove blanks for now
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !project %in% c("Blank"))
+
+# check it
+cesu_16S_ps_subset@sam_data[["comboLabel"]] # ok
+
+# the initials are still in there
+```
+
+# Plot relative and absolute abundance of phylum-level groups across the entire project. Keep all samples without shade for now, but maybe remove later
+```{r}
+ # factor the label levels for plotting
+cesu_16S_ps_subset@sam_data$comboLabel <- factor(cesu_16S_ps_subset@sam_data$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+cesu_16S_ps_subset@sam_data$desert <- factor(cesu_16S_ps_subset@sam_data$desert, levels = c("control", "C", "CP", "MJ"))
+#Get count of reads by phyla
+table(phyloseq::tax_table(cesu_16S_ps_subset)[, "Phylum"]) #40 Phyla included
+# get the total read count per sample
+reads_per_sample <- as.data.frame (sample_sums(cesu_16S_ps_subset)) # they are all different because we did not rarefy in this dataset
+#copy the rownames to a column
+reads_per_sample <- tibble::rownames_to_column(reads_per_sample, "Sample")
+# change the name of the second column
+colnames(reads_per_sample) <- c("Sample", "totalReads")
+nrow(reads_per_sample) # 143 samples are included
+
+# first melt the data out of phyloseq format and into long dataframe
+cesu_psmelt <- psmelt(cesu_16S_ps_subset) #this takes some time, patience!
+
+# Get a list of the most abundant Phyla by comboLabel
+phyla_summary <- cesu_psmelt %>%
+  group_by(comboLabel, Phylum) %>%
+  summarise(totalAbund = sum(Abundance)) %>%
+  arrange(-totalAbund)
+
+# Get a list of the most abundant Phyla
+temp <- cesu_psmelt %>%
+  group_by(Phylum) %>%
+  summarise(totalAbund = sum(Abundance)) %>%
+  arrange(-totalAbund)
+
+temp <- temp[1:9,]
+
+top9Phyla <- temp$Phylum # list that holds the Top9Phyla names
+top9Phyla
+
+#subset the psmelt dataframe for only the Top9Phyla
+phylaSubset <- cesu_psmelt %>%
+  filter(Phylum %in% top9Phyla)
+
+# check that we got the right ones
+unique(phylaSubset$Phylum) # yes
+
+# calculate the reads per Phylum, grouped by Sample
+phylaSubset_abund <- phylaSubset %>%
+  group_by(Sample, Phylum) %>%
+  summarise(abund = sum(Abundance))
+
+#make a new column were I divide each of the values by the correct one in the reads_per_sample list
+# first merge the reads_per_sample data onto the dataframe
+phylaSubset_abund2 <- inner_join(phylaSubset_abund, reads_per_sample, by = "Sample")
+# calculate reltive abundance: divide the abund column by the total reads column
+phylaSubset_abund2$relAbund <- phylaSubset_abund2$abund / phylaSubset_abund2$totalReads
+# check that it does not add to 1 because there should be some in the Other category
+total_relAbund <- phylaSubset_abund2 %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(relAbund))
+# add a new column which contains the relative abundance value for the Other category
+total_relAbund$other <- (1 - total_relAbund$sum)
+# delete the sum column
+total_relAbund <- total_relAbund %>%
+  dplyr::select(Sample, other)
+#add column which is "Other" repeated
+total_relAbund$Phylum <- "Other"
+#change column header "other" to relAbund
+colnames(total_relAbund)[which(names(total_relAbund) == "other")] <- "relAbund"
+# select columns to keep in the dataframe we want
+phylaSubset_abund2 <- phylaSubset_abund2 %>%
+  dplyr::select(Sample, relAbund, Phylum)
+# rbind the other values to the phylaSubset_abund2 dataframe
+phylaSubset_abund3 <- rbind(phylaSubset_abund2, total_relAbund)
+
+# Now check that they sum to 1
+total_relAbund2 <- phylaSubset_abund3 %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(relAbund)) 
+head(total_relAbund2) # YES!!!!
+
+# plot it!
+# Plot Relative Abundance
+temp2 <- unique(cesu_psmelt %>% dplyr::select(Sample, comboLabel, desert, project, shade))
+phylaSubset_abund3 <- left_join(phylaSubset_abund3, temp2, by = "Sample")
+
+# Plot Relative Abundance - basic first glimpse
+# phylaSubset_abund3 %>%
+#   ggplot(aes(y = relAbund, x = Sample, fill = Phylum)) +
+#   geom_bar(stat = "identity", colour = "black", linewidth = 0.25) +
+#   labs(x = "", y = "Relative Abundance", fill = "Phyla") +
+#   theme_classic()+
+#   coord_cartesian(ylim = c(0,1), expand = FALSE)+
+#   theme(axis.title = element_text(face = "bold", size = 16),
+#         axis.text.x = element_text(size = 12, angle = 90),
+#         axis.text.y = element_text(size = 12),
+#         legend.text = element_text(face = "italic"),
+#         axis.ticks.x = element_blank())
+
+# All together but average (not every replicate)
+# first calculate the averages
+phylaSubset_abund3_agregate <- phylaSubset_abund3 %>% 
+  group_by(comboLabel, Phylum, desert, shade, project) %>%
+  summarise(meanRel_abund = mean(relAbund),
+            sdRel_abund = sd(relAbund))
+
+phylaSubset_abund3_agregate$comboLabel <- factor(phylaSubset_abund3_agregate$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+# plot
+#new_labels <- c("CPinitial" = "Colorado\nPlateau", "MJinitial" = "Mojave\nDesert","SNinitial" = "Sonoran\nDesert")
+
+phylaSubset_abund3_agregate$Phylum <- factor(phylaSubset_abund3_agregate$Phylum, levels = c("Other","Planctomycetota","Verrucomicrobiota","Crenarchaeota", "Chloroflexi", "Actinobacteriota", "Acidobacteriota","Cyanobacteria", "Proteobacteria","Bacteroidota"))
+
+ten_colors_green_remixed <- c('#658354', '#536A89', '#BE6C9C', '#0F74C8', '#4E467A', '#9591BF','#2A659B','#AB3A62', '#E395C2', '#508EBF')
+
+phylaSubset_abund3_agregate %>%
+  ggplot(aes(y = meanRel_abund, x = comboLabel, fill = Phylum)) +
+  geom_bar(stat = "identity", alpha = 0.8, width = 0.85) +
+  scale_fill_manual(values = ten_colors_green_remixed, breaks=c("Bacteroidota", "Proteobacteria","Cyanobacteria", "Acidobacteriota", "Actinobacteriota", "Chloroflexi", "Crenarchaeota", "Verrucomicrobiota", "Planctomycetota", 'Other'))+
+  scale_y_continuous(expand = c(0, 0.01), breaks=seq(0, 1, .2)) +
+  theme_classic()+
+  coord_flip()+
+  #facet_grid(rows = vars(comboLabel), scales = "free", space = "free", switch = "y")+ ##labeller = labeller(comboLabel = new_labels
+  labs(x = "", y = "Relative Abundance", fill = "")+
+  theme(axis.text.x = element_text(size = 12),
+        #axis.text.y = element_blank(),
+        #axis.ticks.y = element_blank(),
+        axis.title = element_text(size = 12),
+        #strip.background = element_rect(fill="white", colour=NA),
+        #strip.background = element_blank(),
+        #strip.text = element_blank(),
+        #strip.text = element_text(face="bold", size=12),
+        #strip.text.y.left = element_text(angle = 0),
+        legend.title = element_text(face = "bold"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 10),
+        plot.margin = margin(0.5,1,0,0, "cm"))+
+  guides(fill = guide_legend(nrow = 3, byrow = TRUE))                           
+
+#I did not save this relative abundance plot
+```
+
+# Absolute Abundance
+```{r}
+# need to correct the names of cyanobacteria genera/species with Cydrasil
+head(cesu_psmelt)
+# add in the Cydrasil names
+cyanoassignments_GS <- cyanoassignments %>% dplyr::select("ASV","GS")
+cesupsmelt <- left_join(cesu_psmelt, cyanoassignments_GS, by = c("OTU" = "ASV")) 
+
+# text issues with the names 
+cesupsmelt$GS <- trimws(cesupsmelt$GS, which = c("right"))
+unique(cesupsmelt$GS) # 50 unique GS levels
+# fix some of the names 
+cesupsmelt$GS[cesupsmelt$GS == "Chroococidopsis"] <- "Chroococcidiopsis"
+# Deal with the names
+cesupsmelt$GS_all <- cesupsmelt$GS
+cesupsmelt$GS_all <- ifelse(is.na(cesupsmelt$GS_all), paste(cesupsmelt$Genus), cesupsmelt$GS_all)
+unique(cesupsmelt$GS_all) # 698 unique GS_all levels
+
+# Keep only the cyanobacteria - not doing this for now
+# cesupsmelt_cyano <- cesupsmelt %>% filter(Phylum == "Cyanobacteria") # 47,802 rows of data 
+
+# Calculate absolute abundance for each ASV
+# merge with total reads in sample
+cesupsmelt_abso <- inner_join(cesupsmelt, reads_per_sample, by = "Sample")
+# divide the Abundance column by the total reads column
+cesupsmelt_abso$relAbund <- cesupsmelt_abso$Abundance / cesupsmelt_abso$totalReads
+```
+
+Across all relevant samples - intact, bare, greenhouse, field, restored, choose the top40 genera/species
+```{r}
+genera_summary_all <- cesupsmelt_abso %>% 
+  filter(comboLabel %in% c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil","GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil")) %>%
+  group_by(GS_all, Phylum) %>%
+  summarise(totalRelAbund = sum(relAbund)) %>%
+  arrange(-totalRelAbund)
+
+# keep the top 40, remove NA
+genera_summary_all <- genera_summary_all %>% filter(!GS_all %in% c("not identified", "NA"))
+temp_all_GS <- genera_summary_all[1:40,]
+
+top40GeneraAll <- temp_all_GS$GS_all # list that holds the names of the top genera
+top40GeneraAll
+
+#subset the dataframe with individual samples for only the top40GeneraIntact so that you get values for all soils for those 40 Genera/Species only
+generaAllSubset <- cesupsmelt_abso %>%
+  filter(GS_all %in% top40GeneraAll)
+
+# check that we got the right ones
+unique(generaAllSubset$GS_all) # yes
+unique(generaAllSubset$comboLabel)
+
+# calculate the reads per Genera, grouped by Sample
+generaAllSubset_abund <- generaAllSubset %>%
+  group_by(Sample, GS_all, comboLabel) %>%
+  summarise(relAbund = sum(relAbund))
+
+# check that it does not add to 1 because there should be some in the Other category
+total_relAbund_all <- generaAllSubset_abund %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(relAbund)) # looking ok so far
+
+# add a new column which contains the relative abundance value for the Other category
+total_relAbund_all$other <- (1 - total_relAbund_all$sum)
+# delete the sum column
+total_relAbund_all <- total_relAbund_all %>%
+  dplyr::select(Sample, other)
+#add column which is "Other" repeated
+total_relAbund_all$GS_all <- "Other"
+#change column header "other" to relAbund
+colnames(total_relAbund_all)[which(names(total_relAbund_all) == "other")] <- "relAbund"
+# select columns to keep in the dataframe we want
+generaAllSubset_abund2 <- generaAllSubset_abund %>%
+  dplyr::select(Sample, relAbund, GS_all)
+# rbind the other values to the phylaSubset_abund2 dataframe
+generaAllSubset_abund3 <- rbind(generaAllSubset_abund2, total_relAbund_all)
+
+# Now check that they sum to 1
+total_relAbund2_all <- generaAllSubset_abund3 %>%
+  group_by(Sample) %>%
+  summarise(sum = sum(relAbund)) 
+head(total_relAbund2_all) # YES!!!!
+
+#temp2 <- unique(cesu_psmelt %>% dplyr::select(Sample, comboLabel, desert, project, shade)) # already ran this code above
+generaAllSubset_abund3 <- left_join(generaAllSubset_abund3, temp2, by = "Sample")
+
+#basic first glimpse using relative abundance
+generaAllSubset_abund3 %>%
+  ggplot(aes(y = relAbund, x = comboLabel, fill = GS_all)) +
+  geom_bar(stat = "identity", colour = "black", linewidth = 0.25) +
+  labs(x = "", y = "Relative Abundance", fill = "Genus or species") +
+  theme_classic()+
+  theme(axis.title = element_text(face = "bold", size = 16),
+        axis.text.x = element_text(size = 12, angle = 90),
+        axis.text.y = element_text(size = 12),
+        legend.text = element_text(face = "italic"),
+        axis.ticks.x = element_blank())
+
+# All together but average (not every replicate)
+# first calculate the averages
+generaAllSubset_abund3_aggregate <- generaAllSubset_abund3 %>% 
+  group_by(GS_all,comboLabel, project, desert) %>%
+  summarise(meanrelAbund = mean(relAbund),
+            sdrelAbund = sd(relAbund))
+
+# get the order of the GS_all correct
+generaAllSubset_abund3_aggregate$GS_all <- factor(generaAllSubset_abund3_aggregate$GS_all, levels = c("Other", "Brevundimonas", "Flaviaesturariibacter", "Geodermatophilus", "JGI 0001001-H03", "Nocardioides", "Devosia", "Candidatus Nitrososphaera", "Couchioplanes", "Blastococcus", "Chroococcidiopsis", "Candidatus Udaeobacter", "Pedobacter", "Chryseobacterium", "Rhodocytophaga", "Pseudarthrobacter", "Skermanella", "Spirosoma", "Bryobacter", "Flavobacterium", "Undefined Coleofasciculaceae", "Rubellimicrobium", "Rufibacter", "Aridibacter", "Rubrobacter", "Hymenobacter", "Massilia", "Ferruginibacter", "Abditibacterium", "Scytonema", "Ellin6055", "Microvirga", "RB41", "Sphingomonas", "Blastocatella", "Chthoniobacter", "Flavisolibacter", "Segetibacter", "Adhaeribacter", "Candidatus Nitrocosmicus", "Microcoleus vaginatus"))
+
+forty_colors <- c("#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C","#FDBF6F", "#FF7F00", "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928","dodgerblue2", "red", "green4","purple4", "orange", "black", "gold1","skyblue2", "#FB9A99", "palegreen2","#CAB2D6", "orange3", "gray70", "khaki2", "maroon", "orchid1", "deeppink1", "blue1", "steelblue4","darkturquoise", "green1", "yellow4", "yellow3","darkorange4", "lightblue", "brown", "grey90","grey30", "pink2")
+```
+
+# Colorado Plateau
+Use "project" to facet so that it is more readable. We are leaving off the initial samples because they were already shown in Appendix A.
+```{r}
+# in stacked bar plots and facets, the y axis is plotted backwards, so I need to do some rearranging of the levels 
+generaAllSubset_abund3_aggregate$comboLabel2 <- generaAllSubset_abund3_aggregate$comboLabel
+generaAllSubset_abund3_aggregate$comboLabel2 <- factor(generaAllSubset_abund3_aggregate$comboLabel2, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil","GH0.NA.MJ.3.none.NA.greenhouseSoil",  "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N","MB2.NA.C.A.S.NA.JC", "MB2.NA.C.A.none.NA.N", "R0.f.CP.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil","R0.g.CP.NA.NA.S.soil", "R0.g.CP.NA.NA.none.soil","R0.f.MJ.NA.NA.S.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil","R0.g.MJ.NA.NA.none.soil","R0.control.control.NA.NA.none.soil","R2.g.CP.NA.NA.S.soil","R2.g.CP.NA.NA.none.soil","R2.f.CP.NA.NA.S.soil","R2.f.CP.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.none.soil","R2.control.control.NA.NA.none.soil"))
+
+new_labels_CP <- c("GH0.NA.CP.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH0.NA.CP.3.S.NA.greenhouseSoil" = "Shade",
+                   "GH1.NA.control.3.none.NA.greenhouseSoil" = "No inoculum, no shade",
+                   "GH1.NA.control.3.S.NA.greenhouseSoil" = "No inoculum, shade",
+                   "GH1.NA.CP.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH1.NA.CP.3.S.NA.greenhouseSoil" = "Shade",
+                   "MB2.NA.C.A.none.NA.N" = "No inoculum, no shade",
+                   "MB2.NA.C.A.S.NA.JC" = "No inoculum, shade",
+                   "MB2.NA.CP.A.none.NA.N" = "No shade",
+                   "MB2.NA.CP.A.S.NA.JC" = "Shade",
+                   "R0.g.CP.NA.NA.none.soil" = "Greenhouse cultivated, no shade",
+                   "R0.g.CP.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R0.f.CP.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R0.f.CP.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R0.control.control.NA.NA.none.soil" = "No inoculum",
+                   "R2.g.CP.NA.NA.none.soil" = "Greenhouse cultivated, no shade",
+                   "R2.f.CP.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R2.g.CP.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R2.f.CP.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R2.control.control.NA.NA.none.soil" = "No inoculum")
+
+project_labels <- c("GH0" = "Greenhouse\ncultivation\ninitial", "GH1" = "Greenhouse\ncultivation\nend point","MB2" = "Field\ncultivation\nend point", "R0" = "Restoration\ninitial", "R2"= "Restoration\nend point")
+
+generaAllSubset_abund3_aggregate %>%
+  filter(desert %in% c("CP","C","control")) %>%
+  ggplot(aes(y = meanrelAbund, x = comboLabel2, fill = GS_all)) +
+  geom_bar(stat = "identity", alpha = 0.8, width = 0.85) +
+  geom_col(color = "black", linewidth = 0.25)+
+  scale_fill_manual(values = forty_colors, breaks=c("Microcoleus vaginatus", "Candidatus Nitrocosmicus", "Adhaeribacter", "Segetibacter", "Flavisolibacter", "Chthoniobacter", "Blastocatella", "Sphingomonas", "RB41", "Microvirga", "Ellin6055", "Scytonema", "Abditibacterium", "Ferruginibacter", "Massilia", "Hymenobacter", "Rubrobacter", "Aridibacter", "Rufibacter", "Rubellimicrobium", "Undefined Coleofasciculaceae", "Flavobacterium", "Bryobacter", "Spirosoma", "Skermanella", "Pseudarthrobacter", "Rhodocytophaga", "Chryseobacterium", "Pedobacter", "Candidatus Udaeobacter", "Chroococcidiopsis", "Blastococcus", "Couchioplanes", "Candidatus Nitrososphaera", "Devosia", "Nocardioides", "JGI 0001001-H03", "Geodermatophilus", "Flaviaesturariibacter", "Brevundimonas", "Other"))+
+  scale_y_continuous(expand = c(0, 0.01), breaks=seq(0, 1, .2)) +
+  scale_x_discrete(labels = new_labels_CP)+
+  theme_classic()+
+  coord_flip()+
+  facet_grid(rows = vars(project), scales = "free", space = "free", labeller = labeller(project = project_labels))+
+  ##,  switch = "y"
+  labs(x = "", y = "Relative Abundance", fill = "")+
+  theme(axis.text = element_text(size = 12),
+        #axis.text.y = element_blank(),
+        #axis.ticks.y = element_blank(),
+        axis.title = element_text(size = 12),
+        strip.background = element_rect(fill="white", colour=NA),
+        #strip.background = element_blank(),
+        #strip.text = element_blank(),
+        strip.text = element_text(face="bold", size=12),
+        strip.text.y.right = element_text(angle = 0),
+        #legend.title = element_text(face = "bold"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 10, face = "italic"),
+        plot.margin = margin(0.5,1,0,0, "cm"))+
+  guides(fill = guide_legend(nrow = 8, byrow = TRUE))                           
+
+#save this relative abundance plot
+#ggsave("figures/allCPsamples_GSall_relAbund_stackedbar.pdf", width = 15, height = 10)
+```
+
+# Mojave samples
+```{r}
+new_labels_MJ <- c("GH0.NA.MJ.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH0.NA.MJ.3.S.NA.greenhouseSoil" = "Shade",
+                   "GH1.NA.MJ.3.none.NA.greenhouseSoil" = "No shade",
+                   "GH1.NA.MJ.3.S.NA.greenhouseSoil" = "Shade",
+                   "GH1.NA.control.3.none.NA.greenhouseSoil" = "No inoculum, no shade",
+                   "GH1.NA.control.3.S.NA.greenhouseSoil" = "No inoculum, shade",
+                   "MB2.NA.MJ.A.none.NA.N" = "No shade",
+                   "MB2.NA.MJ.A.S.NA.JC" = "Shade",
+                   "MB2.NA.C.A.none.NA.N" = "No inoculum, no shade",
+                   "MB2.NA.C.A.S.NA.JC" = "No inoculum, shade",
+                   "R0.g.MJ.NA.NA.none.soil"= "Greenhouse cultivated, no shade",
+                   "R0.f.MJ.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R0.g.MJ.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R0.f.MJ.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R0.control.control.NA.NA.none.soil" = "No inoculum",
+                   "R2.g.MJ.NA.NA.none.soil" = "Greenhouse cultivated, no shade",
+                   "R2.f.MJ.NA.NA.none.soil" = "Field cultivated, no shade",
+                   "R2.g.MJ.NA.NA.S.soil" = "Greenhouse cultivated, shade",
+                   "R2.f.MJ.NA.NA.S.soil" = "Field cultivated, shade",
+                   "R2.control.control.NA.NA.none.soil" = "No inoculum"
+)
+
+generaAllSubset_abund3_aggregate %>%
+  filter(desert %in% c("MJ","C","control")) %>%
+  ggplot(aes(y = meanrelAbund, x = comboLabel2, fill = GS_all)) +
+  geom_bar(stat = "identity", alpha = 0.8, width = 0.85) +
+  geom_col(color = "black", linewidth = 0.25)+
+  scale_fill_manual(values = forty_colors, breaks=c("Microcoleus vaginatus", "Candidatus Nitrocosmicus", "Adhaeribacter", "Segetibacter", "Flavisolibacter", "Chthoniobacter", "Blastocatella", "Sphingomonas", "RB41", "Microvirga", "Ellin6055", "Scytonema", "Abditibacterium", "Ferruginibacter", "Massilia", "Hymenobacter", "Rubrobacter", "Aridibacter", "Rufibacter", "Rubellimicrobium", "Undefined Coleofasciculaceae", "Flavobacterium", "Bryobacter", "Spirosoma", "Skermanella", "Pseudarthrobacter", "Rhodocytophaga", "Chryseobacterium", "Pedobacter", "Candidatus Udaeobacter", "Chroococcidiopsis", "Blastococcus", "Couchioplanes", "Candidatus Nitrososphaera", "Devosia", "Nocardioides", "JGI 0001001-H03", "Geodermatophilus", "Flaviaesturariibacter", "Brevundimonas", "Other"))+
+  scale_y_continuous(expand = c(0, 0.01), breaks=seq(0, 1, .2)) +
+  scale_x_discrete(labels = new_labels_MJ)+
+  theme_classic()+
+  coord_flip()+
+  facet_grid(rows = vars(project), scales = "free", space = "free", labeller = labeller(project = project_labels))+
+  ##,  switch = "y"
+  labs(x = "", y = "Relative Abundance", fill = "")+
+  theme(axis.text = element_text(size = 12),
+        #axis.text.y = element_blank(),
+        #axis.ticks.y = element_blank(),
+        axis.title = element_text(size = 12),
+        strip.background = element_rect(fill="white", colour=NA),
+        #strip.background = element_blank(),
+        #strip.text = element_blank(),
+        strip.text = element_text(face="bold", size=12),
+        strip.text.y.right = element_text(angle = 0),
+        #legend.title = element_text(face = "bold"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 10, face = "italic"),
+        plot.margin = margin(0.5,1,0,0, "cm"))+
+  guides(fill = guide_legend(nrow = 8, byrow = TRUE))                           
+
+#save this relative abundance plot
+#ggsave("figures/allMJsamples_GSall_relAbund_stackedbar.pdf", width = 15, height = 10)
+```
+

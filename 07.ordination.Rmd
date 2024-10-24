@@ -1,0 +1,666 @@
+---
+title: "07.ordination"
+project: "Jech et al. Biocrust Cultivation"
+author: "Sierra Jech"
+lab: "Barger Lab"
+date: "2024-10-24"
+output: html_document
+---
+
+# Purpose
+-  Ordination and statistical analyses
+
+# Setup
+Follows after running code in '02.phyloseq_ASV_Table.Rmd' and obtaining the processed phyloseq object. In addition, the '02.phyloseq_ASV_Table.Rmd' code produced a list of 265 cyanobacteria ASVs as a fasta file which was assigned correct names via Cydrasil and iTol. The new list is called 'data_output/cesucyanoassignments265.csv' and should be merged with cyano ASV dataframes when correct genera names need to be used. 
+
+## Libraries
+
+```{r}
+library(phyloseq) # For all bioinformatics analyses post Dada2
+#packageVersion('phyloseq')
+library(ggplot2)
+library(tidyverse)
+library(vegan)
+```
+
+## Load Data
+```{r}
+cesu_16S_ps <- readRDS("data_output/mbcyano_processed_filt_ps.rds")
+cyanoassignments <- read.csv("data/cesucyanoassignments265.csv")
+cyanoassignments$GS <- paste(cyanoassignments$G_checked, cyanoassignments$S_checked)
+qPCR <- read.csv("data/cesuqPCR.csv")
+```
+
+# Get to know the data, create labels, delete extra samples and blanks
+```{r}
+cesu_16S_ps@sam_data@names #colnames for the sample_data information in this phyloseq object
+cesu_16S_ps@sam_data[["names"]] # view all samples
+
+# Create a combo label where sample types are maintained but the replicate is not included (project, farm or greenhouse, desert, water, substrate)
+cesu_16S_ps@sam_data$comboLabel <- paste(cesu_16S_ps@sam_data$project ,cesu_16S_ps@sam_data$farmGreenhouse, cesu_16S_ps@sam_data$desert, cesu_16S_ps@sam_data$water, cesu_16S_ps@sam_data$shade, cesu_16S_ps@sam_data$priorShade,cesu_16S_ps@sam_data$substrate, sep = ".")
+unique(cesu_16S_ps@sam_data$comboLabel)
+table(cesu_16S_ps@sam_data$comboLabel)
+
+#Setup. Delete P and WP substrates, delete water regime B
+# This means I can compare inocula growth in the greenhouse on no substrate, with and without shade (different shade types I think). I will only have timepoint 2 for mayberry farm. I have two timepoints for the greenhouse. I have control values at the greenhouse and farm at the end of cultivation. 
+
+# Subsetting by sample name (remove all sods & watering regime B & blanks):
+# now actually remove them in the ps object
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps, !water %in% c("B"))
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !substrate %in% c("P", "WP"))
+unique(cesu_16S_ps_subset@sam_data$comboLabel)
+table(cesu_16S_ps_subset@sam_data$comboLabel)
+# one of the blanks has an incorrect value for substrate and shade so it is separating out from the rest in the combolabels - fix it when you melt
+# Contruct other useful labels?
+# remove blanks for now
+cesu_16S_ps_subset <- subset_samples(cesu_16S_ps_subset, !project %in% c("Blank"))
+
+# check it
+cesu_16S_ps_subset@sam_data[["comboLabel"]] # ok
+
+
+# Plot relative and absolute abundance of phylum-level groups across the entire project. Keep all samples without shade for now, but maybe remove later
+# factor the label levels for plotting
+cesu_16S_ps_subset@sam_data$comboLabel <- factor(cesu_16S_ps_subset@sam_data$comboLabel, levels = c("CP.NA.initial.NA.none.NA.soil", "CP.NA.initial.NA.none.none.soil", "MJ.NA.initial.NA.none.NA.soil", "GH0.NA.CP.3.none.NA.greenhouseSoil", "GH0.NA.CP.3.S.NA.greenhouseSoil", "GH0.NA.MJ.3.none.NA.greenhouseSoil", "GH0.NA.MJ.3.S.NA.greenhouseSoil", "GH1.NA.control.3.none.NA.greenhouseSoil", "GH1.NA.control.3.S.NA.greenhouseSoil", "GH1.NA.CP.3.none.NA.greenhouseSoil", "GH1.NA.CP.3.S.NA.greenhouseSoil", "GH1.NA.MJ.3.none.NA.greenhouseSoil", "GH1.NA.MJ.3.S.NA.greenhouseSoil", "MB2.NA.C.A.none.NA.N", "MB2.NA.C.A.S.NA.JC", "MB2.NA.CP.A.none.NA.N", "MB2.NA.CP.A.S.NA.JC", "MB2.NA.MJ.A.none.NA.N", "MB2.NA.MJ.A.S.NA.JC", "R0.g.CP.NA.NA.none.soil", "R0.g.CP.NA.NA.S.soil", "R0.g.MJ.NA.NA.none.soil", "R0.f.MJ.NA.NA.none.soil", "R0.g.MJ.NA.NA.S.soil", "R0.f.CP.NA.NA.none.soil", "R0.f.CP.NA.NA.S.soil", "R0.f.MJ.NA.NA.S.soil", "R0.control.control.NA.NA.none.soil", "R2.g.CP.NA.NA.none.soil", "R2.f.CP.NA.NA.none.soil", "R2.g.CP.NA.NA.S.soil", "R2.f.CP.NA.NA.S.soil", "R2.g.MJ.NA.NA.none.soil", "R2.f.MJ.NA.NA.none.soil", "R2.g.MJ.NA.NA.S.soil", "R2.f.MJ.NA.NA.S.soil", "R2.control.control.NA.NA.none.soil"))
+
+cesu_16S_ps_subset@sam_data$desert <- factor(cesu_16S_ps_subset@sam_data$desert, levels = c("control", "C", "CP", "MJ"))
+```
+
+
+## Ordination
+```{r}
+# NMDS with bray curtis on relative abundances
+cesu.ord <- ordinate(cesu_16S_ps_subset, "NMDS", "bray") #stress = 0.134
+
+#stress
+#cesu.ord$stress
+
+#plot_ordination(mbcyano_16s_ps_exp, mbcyano.ord, type="samples", color = "substrate", title="OTUs")+
+#  theme_classic()+
+#  facet_grid(rows = vars(desert))
+#ggsave("output_v1/NMDS_bray_relAbund_desertpanels.pdf", width = 4, height = 10)
+
+# centroids
+cesu.ord$points # gives me the x and y coordinates for each 
+scores(cesu.ord)$sites # gives me the same thing
+# centroids are the average value
+cesu.ord.scores <- as(scores(cesu.ord)$sites,"matrix")
+cesu.ord.scores <- as.data.frame(cesu.ord.scores) #rows are samples and columns are sample data
+# add this to the mapping dataframe 
+# get the mapping information from phyloseq
+mapping <- as(sample_data(cesu_16S_ps_subset), "matrix")
+# Coerce to data.frame
+mapping <- as.data.frame(mapping) #rows are samples and columns are sample data
+mapping <- merge(mapping, cesu.ord.scores, by = 0)
+
+mapping$shade_any <- mapping$shade
+mapping$shade_any[35:42] <- "none"
+mapping$shade_any[44:53] <- "none"
+mapping$shade_any[55:56] <- "none"
+mapping$shade_any[57:64] <- "S"
+mapping$shade_any[66:73] <- "S"
+mapping$shade_any[74:75] <- "none"
+mapping$shade_any[77:86] <- "none"
+mapping$shade_any[88:95] <- "none"
+mapping$shade_any[96:99] <- "S"
+mapping$shade_any[100:108] <- "S"
+mapping$shade_any[110:113] <- "S"
+
+# create a new label for project + shade
+mapping$prjshade <- paste(mapping$project, mapping$shade_any, sep = ".")
+
+# factor the column
+unique(mapping$prjshade)
+mapping$prjshade <- factor(mapping$prjshade, levels = c("CP.none", "MJ.none","GH0.none", "GH0.S","GH1.none","GH1.S","MB2.none", "MB2.S","R0.none","R0.S","R2.none","R2.S"))
+
+# calculate the centroids
+mapping$projdesshade <- paste(mapping$project, mapping$desert, mapping$shade_any)
+mapping$projdes <- paste(mapping$project, mapping$desert)# new label
+cesu.ord.score.centroids <- mapping %>% 
+  group_by(projdesshade, project, desert, shade_any) %>% 
+  summarise(NMDS1_ave = mean(NMDS1),NMDS2_ave = mean(NMDS2)) # plot the centroids of the reference biocrusts onto every panel of the figure 
+# get the initial values
+cesu.ord.score.centroids.initials <- rbind(cesu.ord.score.centroids[1,], cesu.ord.score.centroids[18,])
+# get the shade values
+cesu.ord.score.centroids <- cesu.ord.score.centroids %>% filter(shade_any == "S")
+cesu.ord.score.centroids <- cesu.ord.score.centroids %>% filter(!desert %in% c("control", "C"))
+cesu.ord.score.centroids <- cesu.ord.score.centroids %>% filter(!project %in% c("R0", "R2"))
+```
+
+## Cultivation Ordination with Shade Treatments###
+```{r}
+# stage 2: cultivated biocrusts T1 and T2 with initials as centroids
+shade_colors <- c("black", "black","darkseagreen", "darkslategrey", "darksalmon", "brown4")
+unique(temp$prjshade)
+
+mapping$desert_label <- mapping$desert
+mapping$desert_label[32] <- "MJ"
+mapping$desert_label[109] <- "MJ"
+mapping$desert_label[125] <- "MJ"
+mapping$desert_label[114] <- "CP"
+mapping$desert_label[115] <- "CP"
+mapping$desert_label[116] <- "CP"
+mapping$desert_label[140] <- "CP"
+mapping$desert_label[141] <- "CP"
+mapping$desert_label[143] <- "CP"
+unique(mapping$desert_label) # this is for the shape = CP or MJ
+
+# check the levels of prjshade which is for the colors
+levels(mapping$prjshade) #these look right
+
+mapping %>% 
+  #filter(!is.na(desert)) %>%
+  filter(!project %in% c("R0", "R2", "GH0")) %>%
+  filter(!desert %in% c("C","control")) %>%
+  ggplot()+
+  geom_point(mapping = aes(x = NMDS1, y = NMDS2, color = prjshade, shape = desert_label), size = 5, alpha = 0.7)+
+  #geom_point(data = cesu.ord.score.centroids.initials, mapping = aes(x = NMDS1_ave, NMDS2_ave, shape = project), size = 5)+
+  scale_color_manual(values = shade_colors, labels = c("Intact", "Intact"," Greenhouse", bquote(~Amelioration[GH]~""), " Field", bquote(~Amelioration[Field]~"")))+
+  scale_shape_manual(values = c(19, 17), labels = c("Colorado Plateau", "Mojave"))+
+  labs(x = "NMDS1", y = "NMDS2", color = "", shape = "")+
+  theme_classic()+
+  theme(legend.position = "right",
+        strip.text = element_text(size=14),
+        axis.text = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        axis.title = element_text(size = 14, face = "bold"))+
+  guides(color = guide_legend(ncol = 1),
+         shape = guide_legend(ncol = 1))+
+  xlim(-3,2)+
+  ylim(-2,1.25)
+
+#ggsave("figures/ord_cult2.pdf", width = 8, height = 5)
+```
+
+
+## PERMANOVA and PERMDISP for Cultivation
+```{r}
+# make a new label for prjshade inside the cesu_16S_ps_subset dataframe
+cesu_16S_ps_subset@sam_data$prjshade <- paste(cesu_16S_ps_subset@sam_data$project, cesu_16S_ps_subset@sam_data$shade)
+
+#subset
+cesu_16S_ps_subset2 <- subset_samples(cesu_16S_ps_subset, !project %in% c("R0","MJ","CP", "GH0", "R2"))
+cesu_16S_ps_subset2@sam_data$prjshade # this leaves GH1 & MB2 samples
+
+
+# make a new label for prjdesshade inside the cesu_16S_ps_subset dataframe
+cesu_16S_ps_subset2@sam_data$prjdesshade <- paste(cesu_16S_ps_subset2@sam_data$project, cesu_16S_ps_subset2@sam_data$desert, cesu_16S_ps_subset2@sam_data$shade)
+unique(cesu_16S_ps_subset2@sam_data$prjdesshade)
+
+# make a new label for prjdes inside the cesu_16S_ps_subset dataframe
+cesu_16S_ps_subset2@sam_data$prjdes <- paste(cesu_16S_ps_subset2@sam_data$project, cesu_16S_ps_subset2@sam_data$desert)
+
+# Bray-Curtis Matrix
+bc <- distance(cesu_16S_ps_subset2, method="bray")
+
+set.seed(1223) # To make reproducible 
+adonis2(bc ~ cesu_16S_ps_subset2@sam_data$prjdes)
+#                                     Df SumOfSqs     R2     F Pr(>F)    
+#cesu_16S_ps_subset2@sam_data$prjdes  5   7.0740 0.4909 7.714  0.001 ***
+#  Residual                           40   7.3362 0.5091                 
+#Total                               45  14.4102 1.0000 
+
+adonis2(bc ~ cesu_16S_ps_subset2@sam_data$prjdesshade) 
+#                                     Df SumOfSqs      R2      F Pr(>F)    
+#cesu_16S_ps_subset2@sam_data$prjdesshade 11   9.6544 0.66997 6.2747  0.001 ***
+#  Residual                                 34   4.7558 0.33003                  
+#Total                                    45  14.4102 1.00000 
+
+unique(cesu_16S_ps_subset2@sam_data$prjshade)
+adonis2(bc ~ cesu_16S_ps_subset2@sam_data$prjshade) # Cultivation Type: use this one to say that the field shaded, field, greenhouse shaded, and greenhouse centroids are different
+# Significant effect
+# adonis2(formula = bc ~ cesu_16S_ps_subset2@sam_data$prjshade)
+#                                        Df SumOfSqs      R2      F Pr(>F)    
+#cesu_16S_ps_subset2@sam_data$prjshade    3   5.2493 0.36427 8.0221  0.001 ***
+#  Residual                              42   9.1609 0.63573                  
+#Total                                   45  14.4102 1.00000 
+
+adonis2(bc ~ cesu_16S_ps_subset2@sam_data$desert)
+# adonis2(formula = bc ~ cesu_16S_ps_subset2@sam_data$desert)
+#                                     Df SumOfSqs     R2     F Pr(>F)    
+#cesu_16S_ps_subset2@sam_data$desert  3   4.1938 0.29103 5.747  0.001 ***
+#Residual                            42  10.2164 0.70897                 
+#Total                               45  14.4102 1.00000                 
+
+
+adonis2(bc ~ cesu_16S_ps_subset2@sam_data$project * cesu_16S_ps_subset2@sam_data$shade)
+#adonis2(formula = bc ~ cesu_16S_ps_subset2@sam_data$project * cesu_16S_ps_subset2@sam_data$shade)
+#                                                                         Df SumOfSqs    R2       F Pr(>F)    
+#cesu_16S_ps_subset2@sam_data$project                                     1   3.5188 0.24419 16.1324  0.001 ***
+#cesu_16S_ps_subset2@sam_data$shade                                       1   0.8511 0.05906  3.9019  0.002 ** 
+#cesu_16S_ps_subset2@sam_data$project:cesu_16S_ps_subset2@sam_data$shade  1   0.8794 0.06103  4.0318  0.001 ***
+#Residual                                                                42   9.1609 0.63573                   
+#Total                                                                   45  14.4102 1.00000 
+
+unique(cesu_16S_ps_subset2@sam_data$project)
+adonis2(bc ~ cesu_16S_ps_subset2@sam_data$project) # Cultivation Mode: use this one to say that field and greenhouse centroids are different
+#                                      Df SumOfSqs      R2      F Pr(>F)    
+#cesu_16S_ps_subset2@sam_data$project  1   3.5188 0.24419 14.215  0.001 ***
+#  Residual                             44  10.8914 0.75581                  
+#Total                                45  14.4102 1.00000                 
+
+adonis2(bc ~ cesu_16S_ps_subset2@sam_data$shade)
+#                                   Df SumOfSqs      R2      F Pr(>F)   
+#cesu_16S_ps_subset2@sam_data$shade  1   0.8511 0.05906 2.7618  0.004 **
+#  Residual                           44  13.5591 0.94094                 
+#Total                              45  14.4102 1.00000               
+
+
+
+# PERMDISP
+# multivariate version of Levenne Test. Difference in various in each factor level
+m1 <- betadisper(bc, cesu_16S_ps_subset2@sam_data$prjshade) # significant 
+anova(m1) # Dispersion different
+# Response: Distances
+#             Df  Sum Sq  Mean Sq F value    Pr(>F)    
+#Groups        3 0.30303 0.101010  13.508 2.611e-06 ***
+#Residuals    42 0.31407 0.007478  
+TukeyHSD(m1)
+
+m2 <- betadisper(bc, cesu_16S_ps_subset2@sam_data$desert) # significant
+anova(m2) # Dispersion different
+# Response: Distances
+#Df   Sum Sq   Mean Sq F value   Pr(>F)   
+#Groups     3 0.068974 0.0229913  4.8057 0.005754 **
+#Residuals 42 0.200937 0.0047842    
+TukeyHSD(m2)
+
+
+m3 <- betadisper(bc, cesu_16S_ps_subset2@sam_data$project) # significant 
+anova(m3) # Dispersion different
+#           Df  Sum Sq  Mean Sq F value    Pr(>F)    
+#Groups     1 0.12148 0.121482  20.397 4.676e-05 ***
+#Residuals 44 0.26206 0.005956   
+TukeyHSD(m3)
+
+m4 <- betadisper(bc, cesu_16S_ps_subset2@sam_data$shade) # not significant 
+anova(m4)
+#           Df  Sum Sq  Mean Sq F value Pr(>F)
+#Groups     1 0.01773 0.017727  1.0867 0.3029
+#Residuals 44 0.71778 0.016313
+
+m5 <- betadisper(bc, cesu_16S_ps_subset2@sam_data$prjdesshade) # significant
+anova(m5) # Dispersion different
+#           Df  Sum Sq  Mean Sq F value  Pr(>F)  
+#Groups    11 0.12796 0.011633  2.4969 0.02018 *
+#Residuals 34 0.15840 0.004659                
+#TukeyHSD(m5)
+
+
+# make a new subset to be able to compare within cultivation mode 
+cesu_16S_ps_subset4 <- subset_samples(cesu_16S_ps_subset2, !desert %in% c("control", "C"))
+# build a greenhouse subset
+cesu_16S_ps_subset4_greenhouse <- subset_samples(cesu_16S_ps_subset4, !project %in% c("MB2"))
+# build a field subset
+cesu_16S_ps_subset4_field <- subset_samples(cesu_16S_ps_subset4, !project %in% c("GH1"))
+# check that the datasets are right - yes!
+#cesu_16S_ps_subset4_greenhouse@sam_data$comboLabel
+#cesu_16S_ps_subset4_field@sam_data$comboLabel
+
+# bray matrices
+bc_g <- distance(cesu_16S_ps_subset4_greenhouse, method="bray")
+bc_f <- distance(cesu_16S_ps_subset4_field, method="bray")
+
+# perMANOVA only greenhouse samples
+adonis2(bc_g ~ cesu_16S_ps_subset4_greenhouse@sam_data$desert)
+#  Df SumOfSqs      R2      F Pr(>F)
+#  1   1.1535 0.33997 7.211  0.002
+m6 <- betadisper(bc_g, cesu_16S_ps_subset4_greenhouse@sam_data$desert) # not significant
+anova(m6) # Dispersion not different
+# Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups     1 0.006620 0.0066195  1.4719 0.2451
+TukeyHSD(m6)
+
+# break down greenhouse further into either CP or MJ source
+cesu_16S_ps_subset4_greenhouse_CP <- subset_samples(cesu_16S_ps_subset4_greenhouse, !desert %in% c("MJ"))
+cesu_16S_ps_subset4_greenhouse_MJ <- subset_samples(cesu_16S_ps_subset4_greenhouse, !desert %in% c("CP"))
+
+bc_g_CP <- distance(cesu_16S_ps_subset4_greenhouse_CP, method="bray")
+bc_g_MJ <- distance(cesu_16S_ps_subset4_greenhouse_MJ, method="bray")
+
+# perMANOVA only greenhouse samples from the CP
+adonis2(bc_g_CP ~ cesu_16S_ps_subset4_greenhouse_CP@sam_data$shade)
+#  Df SumOfSqs      R2      F Pr(>F)
+#   1  0.20334 0.16261 1.1651  0.252
+m9 <- betadisper(bc_g_CP, cesu_16S_ps_subset4_greenhouse_CP@sam_data$shade) # not significant
+anova(m9) # Dispersion not different
+#             Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups     1 0.005820 0.0058202  0.9268 0.3729
+
+# perMANOVA only greenhouse samples from the MJ
+adonis2(bc_g_MJ ~ cesu_16S_ps_subset4_greenhouse_MJ@sam_data$shade)
+#  Df SumOfSqs      R2      F Pr(>F)
+#   1  0.18898 0.1911 1.4174  0.031 *
+m10 <- betadisper(bc_g_MJ, cesu_16S_ps_subset4_greenhouse_MJ@sam_data$shade) # not significant
+anova(m10) # Dispersion not different
+#             Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups      1 0.0022389 0.0022389   0.859 0.3898
+```
+
+
+# perMANOVA only field samples
+```{r}
+adonis2(bc_f ~ cesu_16S_ps_subset4_field@sam_data$desert)
+# Df SumOfSqs      R2      F Pr(>F)   
+# 1  0.26865 0.09441 1.4596  0.126
+m7 <- betadisper(bc_f, cesu_16S_ps_subset4_field@sam_data$desert) # not significant
+anova(m7) # Dispersion not different
+#           Df   Sum Sq   Mean Sq F value Pr(>F)
+#Groups     1 0.001379 0.0013792  0.2188 0.6472
+
+
+# break down field further into either CP or MJ source
+cesu_16S_ps_subset4_field_CP <- subset_samples(cesu_16S_ps_subset4_field, !desert %in% c("MJ"))
+cesu_16S_ps_subset4_field_MJ <- subset_samples(cesu_16S_ps_subset4_field, !desert %in% c("CP"))
+
+bc_f_CP <- distance(cesu_16S_ps_subset4_field_CP, method="bray")
+bc_f_MJ <- distance(cesu_16S_ps_subset4_field_MJ, method="bray")
+
+# perMANOVA only field samples from the CP
+adonis2(bc_f_CP ~ cesu_16S_ps_subset4_field_CP@sam_data$shade)
+#  Df SumOfSqs      R2      F Pr(>F)
+#   1  0.32702 0.26072 2.116  0.055
+m11 <- betadisper(bc_f_CP, cesu_16S_ps_subset4_field_CP@sam_data$shade) # significant
+anova(m11) # Dispersion  different
+#             Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups    1 0.032704 0.032704  16.605 0.006539 **
+TukeyHSD(m11)
+
+# perMANOVA only field samples from the MJ
+adonis2(bc_f_MJ ~ cesu_16S_ps_subset4_field_MJ@sam_data$shade)
+#  Df SumOfSqs      R2      F Pr(>F)
+#   1  0.72315 0.5468 7.2392  0.022 *
+m12 <- betadisper(bc_f_MJ, cesu_16S_ps_subset4_field_MJ@sam_data$shade) # not significant
+anova(m12) # Dispersion not different
+#             Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups      1 0.0012871 0.00128712   1.423 0.2779
+
+
+
+
+# Compare to intact crusts???? This was done in response to review but I am still not satisfied with the approach
+cesu_16S_ps_subset4 <- subset_samples(cesu_16S_ps_subset, !project %in% c("R0","GH0", "R0", "R2")) # This leaves only R2 samples and intact crusts
+
+cesu_16S_ps_subset4@sam_data$prjshade
+
+# Bray-Curtis Matrix
+bc4 <- distance(cesu_16S_ps_subset4, method="bray")
+
+# set.seed(1223) # To make reproducible, done above
+unique(cesu_16S_ps_subset4@sam_data$prjshade) # verify the groups that included, yes
+
+adonis2(bc4 ~ cesu_16S_ps_subset4@sam_data$prjshade)
+#                                     Df SumOfSqs      R2      F  Pr(>F)    
+#cesu_16S_ps_subset4@sam_data$prjshade  5   6.9238 0.41149 6.8523  0.001 ***
+#Residual                              49   9.9022 0.58851                  
+#Total                                 54  16.8260 1.00000                  
+# significant even with the intact ones present
+
+m_intact_cult <- betadisper(bc4, cesu_16S_ps_subset4@sam_data$prjshade) # significant
+anova(m_intact_cult) # Dispersion not different
+#             Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups     5 0.56685 0.113370   17.22 8.357e-10 ***
+TukeyHSD(m_intact_cult)
+
+# significant results
+#                     diff         lwr         upr     p adj
+#GH1 none-CP none   0.177198277  0.05508347  0.29931309 0.0010769 done
+#GH1 S-CP none      0.187894837  0.06578003  0.31000965 0.0004655 done
+#MB2 none-GH1 none -0.139790632 -0.24022742 -0.03935385 0.0018739 done
+#MB2 S-GH1 none    -0.170989328 -0.27142611 -0.07055254 0.0000922 done
+#MB2 none-GH1 S    -0.150487193 -0.25092398 -0.05005041 0.0006869 
+#MB2 S-GH1 S       -0.181685889 -0.28212267 -0.08124910 0.0000313
+
+# significant because of Mojave (very tight variability)
+#MJ none-GH1 none  -0.363380117 -0.52009957 -0.20666067 0.0000002 done
+#MJ none-GH1 S     -0.374076678 -0.53079613 -0.21735723 0.0000001 done
+#MJ none-MB2 none  -0.223589485 -0.37890335 -0.06827562 0.0012000 done
+#MJ none-MB2 S     -0.192390789 -0.34770465 -0.03707692 0.0073830 done
+#MJ none-CP none   -0.186181840 -0.35631965 -0.01604403 0.0244031 done
+
+# Not significant
+#MB2 none-CP none   0.037407644 -0.08289796  0.15771325 0.9389340
+#MB2 S-CP none      0.006208948 -0.11409665  0.12651455 0.9999875
+#GH1 S-GH1 none     0.010696561 -0.09190040  0.11329352 0.9995980
+#MB2 S-MB2 none    -0.031198696 -0.12942781  0.06703042 0.9334838
+
+```
+
+
+## Restoration Ordination with Shade Treatments
+stage 3: restored biocrusts T5 and T6 with initials as centroids
+
+I want to also know which points are from the greenhouse vs. field cultivation so I need a new column label
+```{r}
+mapping$projdesfgshade <- paste(mapping$project, mapping$desert, mapping$farmGreenhouse, mapping$shade_any)
+
+# factor the order 
+mapping$projdesfgshade <- factor(mapping$projdesfgshade, levels = c("CP NA NA none", "MJ NA NA none","GH0 CP NA none", "GH0 CP NA S", "GH0 MJ NA none", "GH0 MJ NA S", "GH1 control NA none", "GH1 control NA S", "GH1 CP NA none", "GH1 CP NA S", "GH1 MJ NA none", "GH1 MJ NA S", "MB2 C NA none", "MB2 C NA S", "MB2 CP NA none", "MB2 CP NA S", "MB2 MJ NA none", "MB2 MJ NA S", "R0 control control none", "R0 CP g none", "R0 CP g S", "R0 CP f none", "R0 CP f S", "R0 MJ g none", "R0 MJ g S", "R0 MJ f none", "R0 MJ f S", "R2 CP g none", "R2 CP g S", "R2 CP f none", "R2 CP f S", "R2 MJ g none", "R2 MJ g S", "R2 MJ f none", "R2 MJ f S", "R2 control control none"))
+
+unique(mapping$desert_label)
+mapping$desert_label <- factor(mapping$desert_label, levels = c("CP", "MJ", "control", "C", "NA"))
+
+shade_colors2 <- c("black","black","darkseagreen", "darkslategrey", "darksalmon", "brown4", "darkseagreen", "darkslategrey", "darksalmon", "brown4","black")
+# greenhouse, greenhouse + shade, field, field+shade
+
+
+mapping %>% 
+  #filter(!is.na(desert)) %>%
+  filter(!project %in% c("MB2", "GH1", "GH0", "R0")) %>%
+  #filter(!desert %in% c("C","control")) %>%
+  ggplot()+
+  geom_point(mapping = aes(x = NMDS1, y = NMDS2, color = projdesfgshade, shape = desert_label), size = 5, alpha = 0.7)+
+  #geom_point(data = cesu.ord.score.centroids.initials, mapping = aes(x = NMDS1_ave, NMDS2_ave, shape = project), size = 5)+
+  scale_color_manual(values = shade_colors2, labels = c("Intact","Intact"," Greenhouse", bquote(~Amelioration[GH]~""), " Field", bquote(~Amelioration[Field]~""), " Greenhouse", bquote(~Amelioration[GH]~""), " Field", bquote(~Amelioration[Field]~""), " Uninoculated Control"))+
+  scale_shape_manual(values = c(19, 17, 0), labels = c("Colorado Plateau", "Mojave", " Uninoculated")) +
+  labs(x = "NMDS1", y = "NMDS2", color = "", shape = "")+
+  theme_classic()+
+  theme(legend.position = "right",
+        strip.text = element_text(size=14),
+        axis.text = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        axis.title = element_text(size = 14, face = "bold"))+
+  guides(color = guide_legend(ncol = 1),
+         shape = guide_legend(ncol = 1))+
+  xlim(-3,2)+
+  ylim(-2,1.25)
+
+#ggsave("figures.v6/ord_resto2.pdf", width = 8, height = 5)
+```
+
+# perMANOVA
+```{r}
+# make a new label for prjshade inside the cesu_16S_ps_subset dataframe
+cesu_16S_ps_subset@sam_data$projdesfgshade <- paste(cesu_16S_ps_subset@sam_data$project, cesu_16S_ps_subset@sam_data$desert, cesu_16S_ps_subset@sam_data$farmGreenhouse, cesu_16S_ps_subset@sam_data$shade_any)
+
+unique(cesu_16S_ps_subset@sam_data$projdesfgshade)
+
+# make a column which compares the controls vs. all else
+cesu_16S_ps_subset@sam_data$control <- "inoculated"
+cesu_16S_ps_subset@sam_data$control[85:88] <- "control"
+cesu_16S_ps_subset@sam_data$control[121:124] <- "control"
+cesu_16S_ps_subset@sam_data$control
+
+cesu_16S_ps_subset3 <- subset_samples(cesu_16S_ps_subset, !project %in% c("R0","MJ","CP", "GH0", "GH1", "MB2")) # This leaves only R2 samples
+
+cesu_16S_ps_subset3@sam_data$projdesfgshade # looks good
+
+
+# Bray-Curtis Matrix
+bc3 <- distance(cesu_16S_ps_subset3, method="bray")
+
+#set.seed(1223) # To make reproducible, done above
+adonis2(bc3 ~ cesu_16S_ps_subset3@sam_data$farmGreenhouse)
+adonis2(bc3 ~ cesu_16S_ps_subset3@sam_data$priorShade)
+adonis2(bc3 ~ cesu_16S_ps_subset3@sam_data$projdesfgshade) # use this one to check the R2 inoculum type centroids
+# Not Significant 
+#                                        Df SumOfSqs      R2      F Pr(>F)
+#cesu_16S_ps_subset3@sam_data$projdesfgshade  4   0.4071 0.10844 0.9426  0.559
+#Residual                                    31   3.3472 0.89156              
+#Total                                       35   3.7543 1.00000        
+
+adonis2(bc3 ~ cesu_16S_ps_subset3@sam_data$desert)
+#                                     Df SumOfSqs      R2      F Pr(>F)
+#cesu_16S_ps_subset3@sam_data$desert  2   0.2173 0.05787 1.0135  0.399
+#Residual                            33   3.5371 0.94213              
+#Total                               35   3.7543 1.00000                 
+unique(cesu_16S_ps_subset3@sam_data$desert) # this is also addressing control soils
+
+adonis2(bc3 ~ cesu_16S_ps_subset3@sam_data$control)
+#                                     Df SumOfSqs      R2      F Pr(>F)
+#cesu_16S_ps_subset3@sam_data$control  1   0.0946 0.02521 0.8792  0.589
+
+# PERMDISP
+# multivariate version of Levenne Test. Difference in various in each factor level
+m3 <- betadisper(bc3, cesu_16S_ps_subset3@sam_data$projdesfgshade) # not significant 
+anova(m3) # Dispersion different
+# Response: Distances
+# Df   Sum Sq    Mean Sq F value Pr(>F)
+# Groups     4 0.002123 0.00053064  0.2371 0.9152
+# Residuals 31 0.069375 0.00223791      
+
+m3 <- betadisper(bc3, cesu_16S_ps_subset3@sam_data$desert) # significant
+anova(m3) # Dispersion not different
+#Response: Distances
+#           Df   Sum Sq    Mean Sq F value Pr(>F)
+#Groups     2 0.000288 0.00014411  0.0633 0.9388
+#Residuals 33 0.075183 0.00227827   
+TukeyHSD(m3)
+
+m3 <- betadisper(bc3, cesu_16S_ps_subset3@sam_data$farmGreenhouse) # significant
+anova(m3) # Dispersion not different
+TukeyHSD(m3)
+#
+m3 <- betadisper(bc3, cesu_16S_ps_subset3@sam_data$priorShade) # significant
+anova(m3) # Dispersion not different
+TukeyHSD(m3)
+m3 <- betadisper(bc3, cesu_16S_ps_subset3@sam_data$control) # not significant
+anova(m3) # Dispersion not different
+#Df   Sum Sq    Mean Sq F value Pr(>F)
+#Groups     1 0.000623 0.00062266  0.2556 0.6164
+
+# Checking the ordination stress
+cesu.ord$stress
+
+# Compare to intact crusts
+cesu_16S_ps_subset4 <- subset_samples(cesu_16S_ps_subset, !project %in% c("R0","GH0", "GH1", "MB2")) # This leaves only R2 samples and intact crusts
+```
+
+### Another visualization comparing R0 to R2
+```{r}
+shade_colors2 <- c("darkseagreen", "darkslategrey", "darksalmon", "brown4", "darkseagreen", "darkslategrey", "darksalmon", "brown4", "black")
+mapping %>% 
+  filter(!is.na(desert)) %>%
+  filter(!project %in% c("MB2", "GH1", "GH0")) %>%
+  #filter(!desert %in% c("C","control")) %>%
+  ggplot()+
+  geom_point(mapping = aes(x = NMDS1, y = NMDS2, color = project, shape = desert), size = 5, alpha = 0.7)+
+  geom_point(data = cesu.ord.score.centroids.initials, mapping = aes(x = NMDS1_ave, NMDS2_ave, shape = project), size = 5)+
+  #scale_color_manual(values = shade_colors2, labels = c("Greenhouse", "Greenhouse+shade", "Field", "Field+shade", "Greenhouse", "Greenhouse+shade", "Field", "Field+shade", "No Inoculum Control"))+
+  scale_shape_manual(values = c(19, 17, 0), labels = c("Colorado Plateau", "Mojave", "No Inoculum")) +
+  labs(x = "NMDS1", y = "NMDS2", color = "", shape = "")+
+  theme_classic()+
+  theme(legend.position = "right",
+        strip.text = element_text(size=14),
+        axis.text = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        axis.title = element_text(size = 14, face = "bold"))+
+  guides(color = guide_legend(ncol = 1),
+         shape = guide_legend(ncol = 1))
+
+#ggsave("figures/ord_resto2_t1_t2.pdf", width = 8, height = 5)
+```
+
+# PERMANOVA 
+```{r}
+# subset for only the R0 and R2
+cesu_16S_ps_subset4 <- subset_samples(cesu_16S_ps_subset, project %in% c("R0","R2")) 
+unique(cesu_16S_ps_subset4@sam_data$projdesfgshade) # looks good
+cesu_16S_ps_subset4@sam_data$projdes <- paste(cesu_16S_ps_subset4@sam_data$project, cesu_16S_ps_subset4@sam_data$desert)
+unique(cesu_16S_ps_subset4@sam_data$projdes)
+unique(cesu_16S_ps_subset4@sam_data$project)
+unique(cesu_16S_ps_subset4@sam_data$farmGreenhouse)
+
+# Bray-Curtis Matrix
+bc4 <- distance(cesu_16S_ps_subset4, method="bray")
+
+#set.seed(1223) # To make reproducible, done above
+adonis2(bc4 ~ cesu_16S_ps_subset4@sam_data$project) 
+#                                     Df SumOfSqs      R2      F Pr(>F)    
+# cesu_16S_ps_subset4@sam_data$project  1   0.3461 0.04457 3.2655  0.001 ***
+
+adonis2(bc4 ~ cesu_16S_ps_subset4@sam_data$desert) 
+#                                     Df SumOfSqs      R2      F Pr(>F)  
+#cesu_16S_ps_subset4@sam_data$desert  2   0.3109 0.04004 1.4389  0.052 .
+
+adonis2(bc4 ~ cesu_16S_ps_subset4@sam_data$farmGreenhouse) 
+#                                             Df SumOfSqs      R2      F Pr(>F)  
+#cesu_16S_ps_subset4@sam_data$farmGreenhouse  2   0.2978 0.03835 1.3759  0.068 .
+
+adonis2(bc4 ~ cesu_16S_ps_subset4@sam_data$projdesfgshade) # this one is comparing projdesfg witout shade because the shade info for the restoration samples is in the column "priorshade" 
+#                                             Df SumOfSqs      R2      F Pr(>F)  
+#cesu_16S_ps_subset4@sam_data$projdesfgshade  9   1.2518 0.16122 1.3241  0.012 *
+# this is significant but we cannot check which ones are different
+
+adonis2(bc4 ~ cesu_16S_ps_subset4@sam_data$projdes) 
+# cesu_16S_ps_subset4@sam_data$projdes  5   0.8387 0.10801 1.5983  0.002 **
+
+adonis2(bc4 ~ cesu_16S_ps_subset4@sam_data$priorShade) 
+#                                         Df SumOfSqs      R2      F Pr(>F)
+#cesu_16S_ps_subset4@sam_data$priorShade  1   0.1435 0.01848 1.3176  0.121
+
+# PERMDISP - multivariate version of Levenne Test. Difference in various in each factor level
+# PROJDESFG
+m3 <- betadisper(bc4, cesu_16S_ps_subset4@sam_data$projdesfgshade) # not significant 
+anova(m3) # Dispersion not different
+# Response: Distances
+#         Df   Sum Sq   Mean Sq F value Pr(>F)
+#Groups     9 0.023906 0.0026562    1.06 0.4046 
+TukeyHSD(m3)
+# Project+Desert
+m3 <- betadisper(bc4, cesu_16S_ps_subset4@sam_data$projdes) # not significant 
+anova(m3) # Dispersion not different
+#          Df   Sum Sq   Mean Sq F value Pr(>F)  
+#Groups     5 0.027065 0.0054130  2.1987 0.0648 .
+#
+m3 <- betadisper(bc4, cesu_16S_ps_subset4@sam_data$project) # not significant 
+anova(m3) # Dispersion not different
+# Groups     1 0.000233 0.00023258  0.0971 0.7562
+#
+#
+m3 <- betadisper(bc4, cesu_16S_ps_subset4@sam_data$desert) # not significant 
+anova(m3) # Dispersion not different
+#          Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups     2 0.005308 0.0026542  1.0612 0.3516
+#
+m3 <- betadisper(bc4, cesu_16S_ps_subset4@sam_data$farmGreenhouse) # not significant 
+anova(m3) # Dispersion not different
+#           Df   Sum Sq   Mean Sq F value Pr(>F)
+# Groups     2 0.004984 0.0024921  0.9849 0.3787
+#
+m3 <- betadisper(bc4, cesu_16S_ps_subset4@sam_data$priorShade) # not significant 
+anova(m3) # Dispersion not different
+#           Df   Sum Sq    Mean Sq F value Pr(>F)
+# Groups     1 0.000093 0.00009349  0.0425 0.8373
+```
+
+
+## Distance between centroids = intact biocrust v. treatments in ordination space
+```{r}
+# mapping contains all of the NMDS scores and the mapping info
+# cesu.ord.score.centroids.initials contains the intials 
+# cesu.ord.score.centroids needs to be recalculated
+cesu.ord.score.centroids_all <- mapping %>% 
+  group_by(projdesshade, project, desert, shade_any) %>% 
+  summarise(NMDS1_ave = mean(NMDS1),NMDS2_ave = mean(NMDS2)) # plot the centroids of the reference biocrusts onto every panel of the figure 
+cesu.ord.score.centroids_cult <- cesu.ord.score.centroids_all %>% filter(project %in% c("GH1", "MB2")) %>% filter(desert %in% c("CP", "MJ"))
+# colorado Plateau points
+cesu.ord.score.centroids_cult_CP <- cesu.ord.score.centroids_cult %>% filter(desert %in% c("CP"))
+cesu.ord.score.centroids_cult_CP$dist_to_init <- sqrt((cesu.ord.score.centroids_cult_CP$NMDS1_ave - 0.038)^2 + (cesu.ord.score.centroids_cult_CP$NMDS2_ave - 0.821)^2)
+# Mojave points
+cesu.ord.score.centroids_cult_MJ <- cesu.ord.score.centroids_cult %>% filter(desert %in% c("MJ"))
+cesu.ord.score.centroids_cult_MJ$dist_to_init <- sqrt((cesu.ord.score.centroids_cult_MJ$NMDS1_ave - -0.353)^2 + (cesu.ord.score.centroids_cult_MJ$NMDS2_ave - -1.48)^2)
+# can you get this information from the ordination object instead? cesu.ord$dist
+
+# re-merge the dataframes together so that I can see the data???
+```
