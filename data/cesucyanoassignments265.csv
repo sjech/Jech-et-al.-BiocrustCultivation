@@ -1,0 +1,266 @@
+﻿ASV,G_Cydrasil,S_Cydrasil,G_checked,S_checked,likelihood_note,other_notes,Checked again 4.12.23,Checked against Vanessa's paper?,In steenstrupii complex?,assigners_initials,Date
+ASV_1,Microcoleus,vaginatus,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_36,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_13,Scytonema,sp.,Scytonema,,,,y,y,n,SDJ,spring 2023
+ASV_118,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_164,Scytonema,sp.,Scytonema,,,,y,y,n,SDJ,spring 2023
+ASV_46,Scytonema,sp.,Scytonema,,,,y,y,n,SDJ,spring 2023
+ASV_177,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_67,Microcoleus,paludosus,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_219,Pycnacronema,brasiliensis,Pycnacronema,brasiliensis,,,y,y,y,SDJ,spring 2023
+ASV_181,Parifilum,sp.,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_89,Arizonema,sp.,Arizonema,,,,y,y,y,SDJ,spring 2023
+ASV_152,Pycnacronema,brasiliensis,Pycnacronema,brasiliensis,,,y,y,y,SDJ,spring 2023
+ASV_69,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_134,not identified,,Allocoleopsis,,,,y,y,y,SDJ,spring 2023
+ASV_309,Trichocoleus,sociatus,Funiculus,,,,y,y,y,SDJ,spring 2023
+ASV_291,Porphyrosiphon,notarisii,Funiculus,,likelihood = 0.62,,y,y,y,SDJ,spring 2023
+ASV_175,Microcoleus,paludosus,Microcoleus,paludosus,,,y,y,y,SDJ,spring 2023
+ASV_297,Pycnacronema,spp.,Pycnacronema,,,,y,y,y,SDJ,spring 2023
+ASV_863,not identified,,Undefined Chroococcidiopsidales,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_180,not identified,,not identified,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_390,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_460,Microcoleus,paludosus,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_253,Potamolinea,spp.,Potamolinea,,,,y,y,y,SDJ,spring 2023
+ASV_517,Leptolyngbya,sp.,Trichocoleus,desertorum,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_882,Microcoleus,spp.,Microcoleus,vaginatus,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_936,Microcoleus,vaginatus,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_1117,Nostoc,spp.,Nostoc,,,,y,y,n,SDJ,spring 2023
+ASV_403,Calothrix,spp.,Undefined Nostocales,,likelihood < 70 for Calothrix,,y,y,n,SDJ,spring 2023
+ASV_355,Crustifilum,spp.,Crustifilum,,,,y,y,y,SDJ,spring 2023
+ASV_1591,Scytonema,spp.,Scytonema,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_122,Microcoleus,vaginatus,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_213,Oscillatoriales,cyanobacterium,Undefined Coleofasciculaceae,,,ASK about this one since it is close in proximity to Allocoleopsis but not part of it?,"y, Vanessa",y,n,SDJ,spring 2023
+ASV_310,Microcoleus,steenstrupii,Undefined Coleofasciculaceae, ,,,y,y,y,SDJ,spring 2023
+ASV_640,Parifilum,spp.,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_215,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_295,Sociatus,spp.,Funiculus,,,,y,y,y,SDJ,spring 2023
+ASV_443,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_380,Parifilum,spp.,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_280,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_2603,Desertifilum,spp.,not identified,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_268,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_583,Microcoleus,vaginatus,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_2666,not identified,,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_1553,Crustifilum,,Crustifilum,,,,y,y,y,SDJ,spring 2023
+ASV_1353,not identified,,Arizonema,,,,y,y,y,SDJ,spring 2023
+ASV_392,Microcoleus,vaginatus,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_655,Trichocoleus,desertorum,Trichocoleus,desertorum,,,y,y,n,SDJ,spring 2023
+ASV_887,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_99,Tolypothrix,distorta,Tolypothrix,,"Tolypothrix distorta, total likelihood is only .35 for this one",,y,y,n,VE,spring 2023
+ASV_477,Loriellopsis,cavernicola,Undefined Oscillatoriales,,Loriellopsis cavernicola with likelihood = 0.61,,"y, BLASTn",y,n,VE,spring 2023
+ASV_735,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,y,y,n,VE,spring 2023
+ASV_298,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_1003,Trichocoleus,sociatus,Funiculus,,,,y,y,y,VE,spring 2023
+ASV_462,not identified,,not identified,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_976,not identified,,not identified,,,,y,y,n,VE,spring 2023
+ASV_1428,Aliterella,spp.,Aliterella,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_566,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_564,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_694,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,VE,spring 2023
+ASV_1491,Trichocoleus,desertorum,Trichocoleus,desertorum,,,y,y,n,SDJ,spring 2023
+ASV_2043,Microcoleus,vaginatus,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_489,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_197,Leptolyngbya,spp.,Leptolyngbya,,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_2286,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_1729,not identified,,Funiculus,,,,y,y,y,SDJ,spring 2023
+ASV_804,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_788,Synechocystis,spp.,Undefined Chroococcidiopsidales,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_1015,not identified,,Arizonema,,,,y,y,y,SDJ,spring 2023
+ASV_401,Lyngbya,spp.,Lyngbya,,,,y,y,n,VE,spring 2023
+ASV_1599,Microcoleus,paludosus,Microcoleus,paludosus,,,y,y,y,SDJ,spring 2023
+ASV_1175,not identified,,Microcoleus,vaginatus,,,"y, Vanessa",y,n,SDJ,spring 2023
+ASV_1972,Microcoleus,paludosus,Microcoleus,paludosus,,,y,y,y,SDJ,spring 2023
+ASV_900,Crinalium,epipsammum,Crinalium,epipsammum,,,y,y,n,SDJ,spring 2023
+ASV_730,Nostoc,,Nostoc,,,,y,y,n,VE,spring 2023
+ASV_1381,Scytonema,spp.,Scytonema,,,,y,y,n,SDJ,spring 2023
+ASV_2518,Leptolyngbya,spp.,not identified,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_2244,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_165,not identified,,Undefined Nostocales,,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_429,Scytonema,spp.,Scytonema,,,,y,y,n,SDJ,spring 2023
+ASV_1379,Oscillatoria,spp.,Oscillatoria,,,,y,y,n,SDJ,spring 2023
+ASV_2637,Sociatus,spp.,Funiculus,,,,y,y,y,VE,spring 2023
+ASV_582,Myxacorys,spp.,Myxacorys,californica,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_690,Crustifilum,spp.,Crustifilum,,,,y,y,y,VE,spring 2023
+ASV_721,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,VE,spring 2023
+ASV_759,Chroococcus,spp.,Chroococcus,,,,y,y,n,SDJ,spring 2023
+ASV_526,Crinalium,,Crinalium,epipsammum,"Crinalium, total likelihood is < 0.70",,"y, BLASTn",y,n,VE,spring 2023
+ASV_1235,not identified,,Undefined Oscillatoriales,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_1360,not identified,,Undefined Oscillatoriales,,,,y,y,y,SDJ,spring 2023
+ASV_3074,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_5148,Oscillatoriales,cyanobacterium,Undefined Coleofasciculaceae,,,,"y, Vanessa",y,y,VE,spring 2023
+ASV_3043,not identified,,Nostoc,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_728,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,SDJ,spring 2023
+ASV_4815,not identified,,Undefined Coleofasciculaceae,,,,y,y,n,SDJ,spring 2023
+ASV_2478,Parifilum,spp.,Schizothrix,cf-calcicola,,,y,y,n,VE,spring 2023
+ASV_1596,not identified ,,Trichocoleus,desertorum,,,y,y,n,SDJ,spring 2023
+ASV_2694,Microcoleus,vaginatus,Microcoleus,vaginatus,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_1952,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_4008,Parifilum,spp.,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_5057,Chroococcales,,Chroococcales,cyanobacterium,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_2148,Nostoc,spp.,not identified,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_3333,Parifilum,spp.,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_1832,Nostoc,spp.,Scytonema,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_1425,not identified,,not identified,,,,y,y,n,VE,spring 2023
+ASV_1703,Crinalium,epipsammum,Crinalium,epipsammum,,,y,y,n,SDJ,spring 2023
+ASV_983,Nostoc,spp.,Scytonema,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_1034,Nostoc,spp.,Scytonema,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_1396,Chroococidopsis,,Chroococidopsis,,,,y,y,n,VE,spring 2023
+ASV_2445,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_3327,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_3354,Nostoc,spp.,Nostoc,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_4195,Nostoc,spp.,Nostoc,,,,y,y,n,SDJ,spring 2023
+ASV_766,not identified,,not identified,,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_924,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_574,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,VE,spring 2023
+ASV_1968,not identified ,,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_6210,Parifilum,spp.,Parifilum,,,,y,y,y,VE,spring 2023
+ASV_1371,Hormoscilla,pringsheimii,Hormoscilla,pringsheimii,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_2230,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,VE,spring 2023
+ASV_6303,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_1086,Crinalium,epipsammum,Crinalium,epipsammum,,,y,y,n,VE,spring 2023
+ASV_4699,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_1046,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,VE,spring 2023
+ASV_1239,Nostoc,spp.,Scytonema,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_607,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_6424,Parifilum,spp.,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_1243,not identified,,not identified,,,,y,y,n,VE,spring 2023
+ASV_1263,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_1614,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_2231,not identified,,Microcoleus,vaginatus,,,y,y,n,VE,spring 2023
+ASV_3071,Leptolyngbya,,Leptolyngbya,,,,"y, Vanessa",y,n,SDJ,spring 2023
+ASV_3384,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,SDJ,spring 2023
+ASV_4117,not identified,,not identified,,,,y,y,n,VE,spring 2023
+ASV_845,Leptolyngbya,sp. ,Trichocoleus,desertorum,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_5983,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,VE,spring 2023
+ASV_1228,not identified,,Nostoc,,,,y,y,n,SDJ,spring 2023
+ASV_3612,not identified,,Oculatella,,,,"y, Vanessa",y,n,SDJ,spring 2023
+ASV_4194,not identified,,Stenomitos,frigidus,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_719,Nostoc,,Scytonema,,ASK,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_959,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,SDJ,spring 2023
+ASV_1849,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,VE,spring 2023
+ASV_2031,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_3966,Nostoc,,Nostoc,,,,y,y,n,SDJ,spring 2023
+ASV_4351,not identified,,Wilmottia,,,,"y, BLASTn",y,y,SDJ,spring 2023
+ASV_1380,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_2345,Crinalium,epipsammum,Crinalium,epipsammum,,,y,y,n,VE,spring 2023
+ASV_4018,Leptolyngbya,,Leptolyngbya,,,,"y, Vanessa",y,n,SDJ,spring 2023
+ASV_3607,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_5654,not identified,,Undefined Coleofasciculaceae,,,,y,y,n,SDJ,spring 2023
+ASV_1681,Parifilum,spp.,Parifilum,,,,y,y,y,SDJ,spring 2023
+ASV_7451,Leptolyngbya,,Leptolyngbya,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_1133,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_1403,Lyngbya,spp.,Lyngbya,,,,y,y,n,VE,spring 2023
+ASV_1852,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_3075,Chroococcidiopsis,sp.,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_714,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,SDJ,spring 2023
+ASV_7635,not identified,,Nostoc,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_784,not identified,,Nostoc,,,,y,y,n,VE,spring 2023
+ASV_1761,Stenomitos,frigidus,Stenomitos,frigidus,,,y,y,n,SDJ,spring 2023
+ASV_2203,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_3184,not a cyano (sister clade),,sister clade to cyanobacteria,,,,y,y,n,VE,spring 2023
+ASV_3822,not identified,,Microcoleus,vaginatus,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_4643,Planktothricoides,,Planktothricoides,,,,y,y,n,SDJ,spring 2023
+ASV_7711,not identified,,Leptolyngbya,,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_3993,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_6238,not identified,,Undefined Coleofasciculaceae,,,,y,y,y,SDJ,spring 2023
+ASV_2130,Gloeobacter,spp.,Gloeobacter,,,,y,y,n,SDJ,spring 2023
+ASV_7987,not identified,,Undefined Nostocales,,,,y,y,n,SDJ,spring 2023
+ASV_1137,not identified,,Cephalothrix,,,,"y, Vanessa",y,n,VE,spring 2023
+ASV_3766,Microcoleus,paludosus,Microcoleus,paludosus,,,y,y,y,SDJ,spring 2023
+ASV_4580,Microcoleus,vaginatus ,Microcoleus,vaginatus,,,y,y,n,SDJ,spring 2023
+ASV_5380,Aerosakkonema,funiforme,Cephalothrix,,,,"y, Vanessa",y,n,SDJ,spring 2023
+ASV_5948,not identified,,Undefined Oscillatoriales,,,,y,y,n,VE,spring 2023
+ASV_6061,not identified,,Funiculus,,,,y,y,y,SDJ,spring 2023
+ASV_6239,not identified,,Myxacorys,californica,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_8128,not identified,,Undefined Chroococcidiopsidales,,,,y,y,n,SDJ,spring 2023
+ASV_8213,not identified,,Undefined Oscillatoriales,,,,y,y,n,SDJ,spring 2023
+ASV_2835,Microcoleus,vaginatus,Microcoleus,vaginatus,,,y,y,n,VE,spring 2023
+ASV_3574,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_6653,Leptolyngbya,,not identified,,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_7124,Microcoleus,paludosus,Microcoleus,paludosus,,,y,y,y,SDJ,spring 2023
+ASV_8271,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_8305,Sociatus or Tricocholeus,,Funiculus,,,,y,y,y,SDJ,spring 2023
+ASV_8309,Calothrix,spp.,Calothrix,,,,y,y,n,VE,spring 2023
+ASV_4257,Nostoc,,Scytonema,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_7001,Leptolyngbya,,Leptolyngbya,,,,y,y,n,SDJ,spring 2023
+ASV_1600,Microcoleus,paludosus,Microcoleus,paludosus,,,y,y,y,SDJ,spring 2023
+ASV_2143,Chlorogloea,microcystoides,Cyanothece,,,,"y, BLASTn",y,n,VE,spring 2023
+ASV_2144,Nostoc,,not identified,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_6620,not identified,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_8682,Nostoc,,Undefined Nostocales,,,,"y, BLASTn",y,n,SDJ,spring 2023
+ASV_8733,Nostoc,,Nostoc,,,,y,y,n,SDJ,spring 2023
+ASV_1791,Chroococcidiopsis,,not identified,,,,y,y,n,SDJ,spring 2023
+ASV_2067,not identified,,Funiculus,,,,y,y,y,SDJ,spring 2023
+ASV_4388,Chroococcidiopsis,,Chroococcidiopsis,,,,y,y,n,SDJ,spring 2023
+ASV_9063,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,y,y,n,SDJ,spring 2023
+ASV_4588,Microcoleus,vaginatus,Microcoleus,vaginatus,,,,y,n,SDJ,8/10/23
+ASV_4225,Trichocoleus,desertorum,Trichocoleus,desertorum,,,,y,n,SDJ,8/10/23
+ASV_1782,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_4776,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_3482,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_4285,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_1889,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_2474,not identified,,not identified,,,,,y,n,SDJ,8/10/23
+ASV_3157,Microcoleus,vaginatus,Microcoleus,vaginatus,,,,y,n,SDJ,8/10/23
+ASV_2327,Microcoleus,vaginatus,Microcoleus,vaginatus,,,,y,n,SDJ,8/10/23
+ASV_3909,Microcoleus,vaginatus,Microcoleus,vaginatus,,,,y,n,SDJ,8/10/23
+ASV_4266,Trichocoleus,desertorum,Trichocoleus,desertorum,,,,y,n,SDJ,8/10/23
+ASV_3452,Trichocoleus,desertorum,Trichocoleus,desertorum,,,,y,n,SDJ,8/10/23
+ASV_2375,not a cyano (sister clade),,not a cyano (sister clade),,,,,y,n,SDJ,8/10/23
+ASV_2605,not a cyano (sister clade),,not a cyano (sister clade),,,,,y,n,SDJ,8/10/23
+ASV_2619,not a cyano (sister clade),,not a cyano (sister clade),,,,,y,n,SDJ,8/10/23
+ASV_4488,not a cyano (sister clade),,not a cyano (sister clade),,,,,y,n,SDJ,8/10/23
+ASV_5503,not a cyano (sister clade),,not a cyano (sister clade),,,,,y,n,SDJ,8/10/23
+ASV_918,Calothrix,spp.,Calothrix,,,,,y,n,SDJ,8/10/23
+ASV_1536,Calothrix,spp.,Calothrix,,,,,y,n,SDJ,8/10/23
+ASV_895,Calothrix,spp.,Calothrix,,,,,y,n,SDJ,8/10/23
+ASV_2081,not identified,,not identified,,0.56 Hormoscilla pringsheimii,,,y,n,SDJ,8/10/23
+ASV_4091,Parifilum,spp.,Parifilum,,,,,y,y,SDJ,8/10/23
+ASV_3356,Potamolinea,spp.,Potamolinea,,,,,y,y,SDJ,8/10/23
+ASV_3834,Parifilum,spp.,Parifilum,,,,,y,y,SDJ,8/10/23
+ASV_2329,Schizothrix,cf-calcicola,Schizothrix,cf-calcicola,,,,y,n,SDJ,8/10/23
+ASV_1257,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_1722,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_984,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_4061,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_1776,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_2235,Crinalium,epipsammum,Crinalium,epipsammum,,,,y,n,SDJ,8/10/23
+ASV_2607,Scytonema,spp.,Scytonema,,,,,y,n,SDJ,8/10/23
+ASV_4240,Scytonema,spp.,Scytonema,,,,,"y,blastn",n,SDJ,8/10/23
+ASV_1057,Scytonema,spp.,Scytonema,,,,,"y,blastn",n,SDJ,8/10/23
+ASV_2336,Scytonema,spp.,Scytonema,,,,,"y,blastn",n,SDJ,8/10/23
+ASV_5011,not identified,,not identified,,,,,y,n,SDJ,8/10/23
+ASV_3496,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,,y,n,SDJ,8/10/23
+ASV_2082,Anabaena,cylindrica,Anabaena,cylindrica,,,,y,n,SDJ,8/10/23
+ASV_3278,Tolypothrix,distorta,Tolypothrix,distorta,,,,y,n,SDJ,8/10/23
+ASV_1404,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_1350,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_1430,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_2774,Undefined Nostocales,,Undefined Nostocales,,,,,y,n,SDJ,8/10/23
+ASV_3057,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_2429,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,,y,n,SDJ,8/10/23
+ASV_4885,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_1666,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_1819,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_2124,Undefined Nostocales,,Undefined Nostocales,,,,,y,n,SDJ,8/10/23
+ASV_3661,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,,y,n,SDJ,8/10/23
+ASV_3573,Chroococcidiopsis,spp.,Chroococcidiopsis,,,,,y,n,SDJ,8/10/23
+ASV_3448,Chlorogloea,microcystoides,Chlorogloea,microstoides,,a Chroococcales,,y,n,SDJ,8/10/23
+ASV_1527,Nostoc,spp.,Nostoc,,,,,y,n,SDJ,8/10/23
+ASV_142,Nodularia,spumigena,Nodularia,spumigena,,,,y,n,SDJ,8/10/23
+ASV_1857,Nodularia,spumigena,Nodularia,spumigena,,,,y,n,SDJ,8/10/23
+ASV_726,Trichormus,variabilis,Trichormus,variabilis,,,,y,n,SDJ,8/10/23
+ASV_740,Trichormus,variabilis,Trichormus,variabilis,,,,y,n,SDJ,8/10/23
+ASV_1055,Scytonema,spp.,Scytonema,,,,,y,n,SDJ,8/10/23
+ASV_4873,Scytonema,spp.,Scytonema,,,,,y,n,SDJ,8/10/23
+ASV_4737,Scytonema,spp.,Scytonema,,,,,y,n,SDJ,8/10/23
+ASV_2942,Leptolyngbya,spp.,Leptolyngbya,,,,,y,n,SDJ,8/10/23
+ASV_2228,Stenomitos,frigidus,Stenomitos,frigidus,,,,y,n,SDJ,8/10/23
+ASV_3829,Undefined Leptolyngbyaceae,,Undefined Leptolyngbyaceae,,,,,y,n,SDJ,8/10/23
+ASV_1028,Phormidesmis,priestleyi,Phormidesmis,priestleyi,,,,y,n,SDJ,8/10/23
+ASV_697,Porphyrosiphon,notarisii,Porphyrosiphon,notarisii,,,,y,y,SDJ,8/10/23
+ASV_5437,not identified,,not identified,,,,,y,n,SDJ,8/10/23
+ASV_1301,not identified,,not identified,,,,,y,n,SDJ,8/10/23
+ASV_1961,Leptolyngbya,tenuis,Leptolyngbya,tenuis,,,,y,n,SDJ,8/10/23
+ASV_2245,Tolypothrix,distorta,Tolypothrix,distorta,,,,y,n,SDJ,8/10/23
